@@ -1,0 +1,17 @@
+#!/bin/bash
+
+# MMM-PresenceScreenControl: robust postinstall for electron-rebuild
+
+base=$(pwd)
+logfile=/dev/null
+
+# Ensure @electron/rebuild is installed
+if [ ! -e "$base/node_modules/.bin/electron-rebuild" ]; then
+  npm install @electron/rebuild >>$logfile 2>&1
+fi
+
+# Run electron-rebuild
+"$base/node_modules/.bin/electron-rebuild"
+exit $?
+
+

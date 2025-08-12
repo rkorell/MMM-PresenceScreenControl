@@ -1,0 +1,17 @@
+{
+  "name": "MMM-PresenceScreenControl",
+  "version": "1.0.0",
+  "description": "MagicMirror² module for presence control via PIR sensor and/or MQTT.",
+  "main": "MMM-PresenceScreenControl.js",
+  "author": "Dr. Ralf Korell, 2025. Integration of MMM-Pir (bugsounet/Coernel82) & MMM-MQTTScreenOnOff (olexs)",
+  "license": "MIT",
+  "dependencies": {
+    "mqtt": "^4.2.8",
+    "node-libgpiod": "^0.5.3",
+    "@electron/rebuild": "^3.3.0"
+  },
+  "scripts": {
+    "postinstall": "./postinstall"
+  }
+}
+

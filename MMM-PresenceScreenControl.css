@@ -1,0 +1,50 @@
+.psc-wrapper {
+  background: rgba(0,0,0,0.2);
+  color: #fff;
+ /* padding: 10px 20px;
+  border-radius: 10px;*/
+  font-size: 1.1em;
+  width: 100%;
+  text-align: left !important;
+
+}
+
+.psc-on {
+  color: #00FF00;
+  font-weight: bold;
+}
+.psc-off {
+  color: #FF0000;
+  font-weight: bold;
+}
+
+.psc-linebar {
+  width: 100%;
+  height: 3px;
+  background: #222;
+  border-radius: 4px;
+  margin: 6px 0 6px 0;
+  overflow: hidden;
+}
+.psc-bar {
+  height: 100%;
+  border-radius: 4px;
+  transition: width 0.4s, background 0.4s;
+}
+
+.psc-timer {
+  font-size: 16px;
+  margin-top: 4px;
+  margin-bottom: 2px;
+  /* font-family: monospace; */
+  letter-spacing: 1px;
+  text-align: center;
+}
+
+.psc-overlay {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  z-index: 99999;
+  background: rgba(0,0,0,0);
+  cursor: pointer;
+}
