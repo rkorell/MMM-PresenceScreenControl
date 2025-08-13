@@ -1,5 +1,19 @@
-/** PIR library **/
-/** Dr. Ralf Korell -> prior version created by: bugsounet **/
+/**
+ * pirLib.js
+ * Helper library for PIR sensor access using node-libgpiod.
+ *
+ * Author: Dr. Ralf Korell, 2025
+ * Originally from MMM-Pir (bugsounet/Coernel82), 
+ * updated for label-free GPIO chip detection.
+ * 
+ * CHANGE: Instead of searching for a chip by label, this implementation
+ * dynamically scans all /dev/gpiochip* devices. 
+ * Rationale: Modern Linux kernels and Pi OS often do not assign stable or meaningful labels to GPIO chips.
+ * Old label-based detection can fail or select the wrong chip. 
+ * Scanning all gpiochip devices makes detection reliable on current systems.
+ * 
+ * License: MIT
+ */
 
 var log = () => { /* do nothing */ };
 

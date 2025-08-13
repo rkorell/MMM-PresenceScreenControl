@@ -1,3 +1,14 @@
+/**
+ * node_helper.js for MMM-PresenceScreenControl
+ * Backend logic for presence and screen control using PIR and/or MQTT sensors.
+ * Manages timers, cron-based ignore/always-on windows, auto-dimming, and executes user-supplied commands.
+ * 
+ * Author: Dr. Ralf Korell, 2025
+ * Integrates logic and ideas from MMM-Pir (bugsounet/Coernel82) and MMM-MQTTScreenOnOff (olexs)
+ * License: MIT
+ */
+
+
 const NodeHelper = require("node_helper");
 const { exec } = require("child_process");
 const mqtt = require("mqtt");

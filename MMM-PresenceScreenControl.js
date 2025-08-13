@@ -1,49 +1,55 @@
 /**
  * MMM-PresenceScreenControl.js
- * MagicMirror² presence, always-on and timer bar frontend
- * (C) Dr. Ralf Korell, August 2025
+ * MagicMirror² module for presence detection and screen control using PIR and/or MQTT sensors.
+ * Shows a presence bar, handles timers, auto-dimming, ignore/always-on windows, and touch override.
  *
- * Features:
- * - Shows a colored timer bar for presence/always-on (style=2)
- * - style=0: no graphic at all
- * - Handles "always on" windows and "ignore" windows
- * - Supports PIR, MQTT and touch triggers
- * - resetCountdownWidth: if true, always-on bar jumps to 100% at end of window
- * - Otherwise: bar continues "soft" at current width (no jump)
+ * Author: Dr. Ralf Korell, 2025
+ * Based on MMM-Pir (bugsounet/Coernel82) and MMM-MQTTScreenOnOff (olexs)
+ * License: MIT
  */
 
 Module.register("MMM-PresenceScreenControl", {
+  /**
+   * Default configuration values for the module.
+   * Adjust these in your config.js as needed.
+   */
   defaults: {
-    mode: "PIR_MQTT", // "PIR", "MQTT" or "PIR_MQTT"
-    pirGPIO: 4, // GPIO pin for PIR sensor (BCM numbering)
-    mqttServer: "mqtt://localhost:1883", // MQTT broker URL
-    mqttTopic: "sensor/presence", // MQTT topic for presence
-    mqttPayloadOccupancyField: "presence", // Field name in MQTT payload
-    onCommand: "DISPLAY=:0.0 xrandr --output HDMI-1 --primary --mode 2560x1440 --rate 59.951 --pos 0x0 --rotate left", // Command to turn display on
-    offCommand: "DISPLAY=:0.0 xrandr --output HDMI-1 --off", // Command to turn display off
-    counterTimeout: 120, // Presence stays active for this many seconds after last event
-    autoDimmer: true, // Enable/disable auto-dimming feature
-    autoDimmerTimeout: 60, // Time (in seconds) before auto-dim triggers
-    cronIgnoreWindows: [], // List of time windows (see docs) to ignore presence
-    cronAlwaysOnWindows: [], // List of time windows for always-on
-    touchMode: 2, // Touch interaction mode (0=off, 1=simple, 2=toggle, 3=advanced)
-    style: 2, // 0 = no graphic, 2 = bar (the only supported style)
-    colorFrom: "red", // End color for countdown bar (should be "red")
-    colorTo: "lime", // Start color for countdown bar (should be "lime")
-    colorCronActivation: "cornflowerblue", // Color for always-on mode
-    showPresenceStatus: true, // Show YES/NO status above bar
-    debug: "simple", // Debug level: "off", "simple", "complex"
-    resetCountdownWidth: false // If true, always-on bar resets to 100% width in final phase
+    mode: "PIR_MQTT",                     // "PIR", "MQTT", or "PIR_MQTT": which sensor(s) to use
+    pirGPIO: 4,                           // GPIO pin (BCM numbering) for PIR sensor
+    mqttServer: "mqtt://localhost:1883",  // MQTT broker URL
+    mqttTopic: "sensor/presence",         // MQTT topic for presence messages
+    mqttPayloadOccupancyField: "presence",// Field in MQTT payload indicating presence
+    onCommand: "vcgencmd display_power 1",// Command to turn the display ON
+    offCommand: "vcgencmd display_power 0",// Command to turn the display OFF
+    counterTimeout: 120,                  // Seconds to keep the display on after last presence
+    autoDimmer: true,                     // Enable/disable auto-dimming instead of instant off
+    autoDimmerTimeout: 60,                // Seconds before auto-dimming triggers
+    cronIgnoreWindows: [],                // Time windows to ignore all presence
+    cronAlwaysOnWindows: [],              // Time windows to keep display always on
+    touchMode: 2,                         // Touch mode (0=off, 1=simple, 2=toggle, 3=advanced)
+    style: 2,                             // Display style: 2 = bar, 0 = no graphic
+    colorFrom: "red",                     // Bar color at timer end (empty)
+    colorTo: "lime",                      // Bar color at timer start (full)
+    colorCronActivation: "cornflowerblue",// Bar color during always-on window
+    showPresenceStatus: true,             // Show "Presence: YES/NO" above the bar
+    debug: "simple",                      // Debug level: "off", "simple", "complex"
+    resetCountdownWidth: false            // If true, bar jumps to 100% at always-on countdown start
   },
 
   fadeTimers: [],
   lastDimmedState: null,
-  hasAlwaysOnJumped: false, // Internal state for one-time jump
+  hasAlwaysOnJumped: false, // Used for resetCountdownWidth logic
 
+  /**
+   * Loads the module's CSS file.
+   */
   getStyles: function () {
     return ["MMM-PresenceScreenControl.css"];
   },
 
+  /**
+   * Initializes module state and sends configuration to the node helper.
+   */
   start: function () {
     this.presence = false;
     this.counter = 0;
@@ -58,6 +64,9 @@ Module.register("MMM-PresenceScreenControl", {
     this.updateDom();
   },
 
+  /**
+   * Debug logging function, controlled by the debug config option.
+   */
   log: function (msg, level="simple") {
     if (this.config.debug === "off") return;
     if (this.config.debug === level || this.config.debug === "complex") {
@@ -65,6 +74,11 @@ Module.register("MMM-PresenceScreenControl", {
     }
   },
 
+  /**
+   * Fades the opacity of all MagicMirror regions for auto-dimming effect.
+   * @param {number} target - Target opacity value
+   * @param {number} duration - Fade duration in milliseconds
+   */
   fadeRegionsOpacity: function(target, duration) {
     this.fadeTimers.forEach(t => clearTimeout(t));
     this.fadeTimers = [];
@@ -85,6 +99,9 @@ Module.register("MMM-PresenceScreenControl", {
     }
   },
 
+  /**
+   * Handles incoming data from the node helper and updates the module state.
+   */
   socketNotificationReceived: function (notification, payload) {
     if (notification === "PRESENCE_UPDATE") {
       this.presence = payload.presence;
@@ -111,11 +128,12 @@ Module.register("MMM-PresenceScreenControl", {
   },
 
   /**
-   * Calculates the color for the countdown bar as a linear interpolation between two colors.
-   * @param {string} fromCol - Start color.
-   * @param {string} toCol - End color.
-   * @param {number} percent - Interpolation parameter [0,1].
-   * @returns {string} The interpolated color in rgb() format.
+   * Calculates a linearly interpolated color between two CSS color strings.
+   * Used for smooth bar color transitions as the timer runs down.
+   * @param {string} fromCol - Start color (e.g. green)
+   * @param {string} toCol - End color (e.g. red)
+   * @param {number} percent - Value from 0 (fromCol) to 1 (toCol)
+   * @returns {string} - RGB color string
    */
   getCountdownColor: function (fromCol, toCol, percent) {
     function colorToRgb(c) {
@@ -139,50 +157,50 @@ Module.register("MMM-PresenceScreenControl", {
   },
 
   /**
-   * Main DOM rendering for the module.
-   * Shows status, the presence bar (with always-on logic), timer text and overlay.
-   * Only style=2 (bar) or style=0 (no graphic) is supported.
+   * Main DOM rendering: Shows presence status, timer bar, timer text, and overlay.
+   * Handles always-on and ignore logic, visual timer bar, and touch overlay.
    */
   getDom: function () {
     var wrapper = document.createElement("div");
     wrapper.className = "psc-wrapper";
 
-    // Show presence status if enabled
+    // Show presence status above the bar
     if (this.config.showPresenceStatus) {
       var status = document.createElement("div");
       status.innerHTML = "Presence: " + (this.presence ? "<span class='psc-on'>YES</span>" : "<span class='psc-off'>NO</span>");
       wrapper.appendChild(status);
     }
 
-    // Show ignore mode if active
+    // Show ignore window hint if active
     if (this.ignoreActive) {
       var ignoreDiv = document.createElement("div");
       ignoreDiv.innerHTML = "<span style='color:gray;'>[Presence Ignored]</span>";
       wrapper.appendChild(ignoreDiv);
     }
 
-    // Only show bar if style==2
+    // Bar visualization (style 2 = bar) or nothing (style 0)
     if (this.config.style === 2) {
-      // Always-On bar logic
+      // Always-on window logic: bar is blue, then fades to red in last seconds
       if (this.alwaysOn && typeof this.alwaysOnTotal === "number" && typeof this.alwaysOnLeft === "number") {
         let progDiv = document.createElement("div");
         progDiv.className = "psc-linebar";
 
         if (this.alwaysOnLeft > this.config.counterTimeout) {
+          // Bar shrinks in blue during always-on window
           let percent = this.alwaysOnLeft / this.alwaysOnTotal;
           let barWidth = Math.max(1, percent * 100);
           let barColor = this.config.colorCronActivation;
           progDiv.innerHTML = "<div class='psc-bar' style='width:" + barWidth + "%;background:" + barColor + ";'></div>";
-          this.hasAlwaysOnJumped = false; // Reset for next window
+          this.hasAlwaysOnJumped = false;
         } else {
-          // End phase (last counterTimeout seconds)
+          // Final phase: bar fades from blue to red, optionally jumps to 100% width
           let barColor = this.getCountdownColor(this.config.colorCronActivation, this.config.colorFrom, 1 - (this.alwaysOnLeft / this.config.counterTimeout));
           let barWidth;
           if (this.config.resetCountdownWidth && !this.hasAlwaysOnJumped) {
             barWidth = 100;
             this.hasAlwaysOnJumped = true;
           } else if (!this.config.resetCountdownWidth) {
-            // Continue soft: barWidth stays relative to always-on window (never jumps)
+            // No jump: continue smoothly from current width, relative to always-on window
             barWidth = (this.alwaysOnLeft / this.alwaysOnTotal) * 100;
           } else {
             // After jump: normal countdown to zero in end phase
@@ -193,7 +211,7 @@ Module.register("MMM-PresenceScreenControl", {
         }
         wrapper.appendChild(progDiv);
 
-        // Timer display for always-on
+        // Timer text for always-on window
         var total = this.alwaysOnLeft;
         var hours = Math.floor(total / 3600);
         var min = Math.floor((total % 3600) / 60);
@@ -215,7 +233,7 @@ Module.register("MMM-PresenceScreenControl", {
         wrapper.appendChild(timeDiv);
 
       } else {
-        // Normal timer bar
+        // Normal presence timer bar (not in always-on window)
         var progDiv = document.createElement("div");
         progDiv.className = "psc-linebar";
         var phase = Math.max(0, this.counter / this.config.counterTimeout);
@@ -224,7 +242,7 @@ Module.register("MMM-PresenceScreenControl", {
         progDiv.innerHTML = "<div class='psc-bar' style='width:" + barWidth + ";background:" + barColor + ";'></div>";
         wrapper.appendChild(progDiv);
 
-        // Normal timer display
+        // Timer text for normal countdown
         var total = this.counter;
         var hours = Math.floor(total / 3600);
         var min = Math.floor((total % 3600) / 60);
@@ -240,9 +258,8 @@ Module.register("MMM-PresenceScreenControl", {
         wrapper.appendChild(timeDiv);
       }
     }
-    // style==0: show nothing (no graphic)
 
-    // Overlay for off state
+    // Overlay for "off" state (disabled mirror)
     if (!this.presence) {
       if (!document.getElementById("psc-global-overlay")) {
         var overlay = document.createElement("div");
@@ -261,6 +278,10 @@ Module.register("MMM-PresenceScreenControl", {
     return wrapper;
   },
 
+  /**
+   * Handles click and touch events for manual override (touchMode).
+   * Sends events to node_helper for processing.
+   */
   notificationReceived: function(notification, payload, sender) {
     if (notification === "DOM_OBJECTS_CREATED") {
       var wrapper = document.querySelector(".psc-wrapper");

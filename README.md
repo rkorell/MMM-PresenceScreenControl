@@ -67,6 +67,14 @@ We trimmed the fat:
 
 ---
 
+## Screenshots
+
+![Presence Bar triggered by sensor](images/PresenceBarSensorTriggered.png)
+![Presence Bar for "always on"](images/PresenceBarAlwaysOn.png)
+
+---
+
+
 ## Key Differences, Advantages, and Limitations
 
 ### **Advantages**
