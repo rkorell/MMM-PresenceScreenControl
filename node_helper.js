@@ -37,6 +37,8 @@ module.exports = NodeHelper.create({
     this.pirInstance = null;
     this.pirPresence = false;
     this.mqttPresence = false;
+    this.touchPresence = false;
+    this.touchTimer = null;
     this.alwaysOnWindow = null;
   },
 
@@ -90,11 +92,18 @@ module.exports = NodeHelper.create({
 
   triggerPresence: function () {
     this.log("Touch: Triggering presence event (screen on/timer reset).", "simple");
-    this.presence = true;
-    this.counter = this.config.counterTimeout;
-    this.updateScreen(true);
-    this.startCounter();
-    this.sendPresenceUpdate();
+    // RKORELL: Touch setzt touchPresence, nicht presence direkt.
+    // Nach 100ms wird touchPresence zurückgesetzt → Counter zählt runter.
+    // Wenn PIR/MQTT aktiv wird, übernimmt das und nullt touchPresence.
+    this.touchPresence = true;
+    if (this.touchTimer) clearTimeout(this.touchTimer);
+    this.updatePresence();
+
+    this.touchTimer = setTimeout(() => {
+      this.touchPresence = false;
+      this.touchTimer = null;
+      this.updatePresence();
+    }, 100);
   },
 
   shutdownScreen: function () {
@@ -125,8 +134,16 @@ module.exports = NodeHelper.create({
       }, 
       (event, data) => {
         if (event === "PIR_DETECTED") {
+          console.log("[node_helper] PIR_DETECTED received");
           this.pirPresence = true;
+          // RKORELL: Touch-Mechanismus nullen wenn echte Präsenz erkannt
+          this.touchPresence = false;
+          if (this.touchTimer) {
+            clearTimeout(this.touchTimer);
+            this.touchTimer = null;
+          }
         } else if (event === "PIR_LEFT") {
+          console.log("[node_helper] PIR_LEFT received, setting pirPresence=false");
           this.pirPresence = false;
         }
         this.updatePresence();
@@ -153,6 +170,14 @@ module.exports = NodeHelper.create({
         let occ = payload[field];
         let presence = (typeof occ === "boolean") ? occ : (occ === "1" || occ === 1 || occ === "true");
         this.mqttPresence = presence;
+        // RKORELL: Touch-Mechanismus nullen wenn echte Präsenz erkannt
+        if (presence) {
+          this.touchPresence = false;
+          if (this.touchTimer) {
+            clearTimeout(this.touchTimer);
+            this.touchTimer = null;
+          }
+        }
         this.updatePresence();
       } catch (e) {
         this.log("MQTT payload parse error: " + e, "simple");
@@ -170,16 +195,23 @@ module.exports = NodeHelper.create({
       newPresence = true;
     } else if (this.ignoreActive) {
       newPresence = false;
-    } else if (this.config.mode === "PIR_MQTT") {
-      newPresence = (this.pirPresence || this.mqttPresence);
-    } else if (this.config.mode === "PIR") {
-      newPresence = this.pirPresence;
-    } else if (this.config.mode === "MQTT") {
-      newPresence = this.mqttPresence;
+    } else {
+      // RKORELL: Sensor-Presence je nach Mode, plus touchPresence (unabhängig vom Mode)
+      let sensorPresence = false;
+      if (this.config.mode === "PIR_MQTT") {
+        sensorPresence = (this.pirPresence || this.mqttPresence);
+      } else if (this.config.mode === "PIR") {
+        sensorPresence = this.pirPresence;
+      } else if (this.config.mode === "MQTT") {
+        sensorPresence = this.mqttPresence;
+      }
+      newPresence = sensorPresence || this.touchPresence;
     }
+    console.log(`[updatePresence] pirPresence=${this.pirPresence}, touchPresence=${this.touchPresence}, presence=${this.presence}, newPresence=${newPresence}`);
     if (newPresence) {
       this.presence = true;
       this.counter = this.config.counterTimeout;
+      this.dimmed = false;  // Reset dimmed immediately when presence detected
       this.updateScreen(true);
       this.startCounter();
     } else {
@@ -292,6 +324,7 @@ module.exports = NodeHelper.create({
           this.dimmed = true;
         }
         if (this.counter <= 0) {
+          console.log(`[startCounter] Counter expired: presence=${this.presence}, pirPresence=${this.pirPresence}, calling updateScreen(false)`);
           this.updateScreen(false);
           clearInterval(this.timer);
           this.counter = 0;
@@ -310,10 +343,17 @@ module.exports = NodeHelper.create({
 
   updateScreen: function (on) {
     let cmd = on ? this.config.onCommand : this.config.offCommand;
+    console.log(`[updateScreen] on=${on}, cmd="${cmd}"`);
     if (cmd) {
       exec(cmd, (err, stdout, stderr) => {
-        if (err) this.log("Screen command error: " + err, "simple");
-        else this.log("Executed screen command: " + cmd, "simple");
+        if (err) {
+          console.log(`[updateScreen] ERROR: ${err}`);
+          this.log("Screen command error: " + err, "simple");
+        }
+        else {
+          console.log(`[updateScreen] SUCCESS: executed "${cmd}"`);
+          this.log("Executed screen command: " + cmd, "simple");
+        }
       });
     }
     this.sendPresenceUpdate();

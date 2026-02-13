@@ -104,6 +104,10 @@ class PIR {
         case "NoMotion":
           log("No Motion Detected");
           this.pirReadyToDetect = true;
+          // RKORELL: Send PIR_LEFT callback so node_helper can set pirPresence = false.
+          // Original MMM-Pir only used PIR_DETECTED; MMM-PresenceScreenControl needs both.
+          console.log("[PIR] NoMotion event fired, sending PIR_LEFT");
+          this.callback("PIR_LEFT");
           log("Debug: Set motion detect ready to:", this.pirReadyToDetect);
           break;
         default:
@@ -130,6 +134,18 @@ class PIR {
   }
 
   gpiodDetect () {
+    // RKORELL: Auto-detection with fallback to Python/gpiozero.
+    // node-libgpiod (npm) only works with libgpiod 1.x (Bookworm).
+    // On Trixie (libgpiod 2.x), require() fails — fall back to gpiozero automatically.
+    try {
+      require.resolve("node-libgpiod");
+    } catch (e) {
+      console.log("[MMM-Pir] [LIB] [PIR] [GPIOD] node-libgpiod not available, falling back to Python/gpiozero (mode 1)");
+      this.config.mode = 1;
+      this.gpiozeroDetect();
+      return;
+    }
+
     try {
       const fs = require('fs');
       const { Chip, Line } = require("node-libgpiod");

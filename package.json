@@ -7,6 +7,9 @@
   "license": "MIT",
   "dependencies": {
     "mqtt": "^4.2.8",
+    "python-shell": "^5.0.0"
+  },
+  "optionalDependencies": {
     "node-libgpiod": "^0.5.3",
     "@electron/rebuild": "^3.3.0"
   },

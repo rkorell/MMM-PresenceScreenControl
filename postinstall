@@ -1,17 +1,29 @@
 #!/bin/bash
 
 # MMM-PresenceScreenControl: robust postinstall for electron-rebuild
+# RKORELL: On Trixie (libgpiod 2.x), node-libgpiod cannot compile.
+# electron-rebuild is only needed for node-libgpiod. If it's not installed
+# (optionalDependency), skip gracefully. The module falls back to Python/gpiozero.
 
 base=$(pwd)
 logfile=/dev/null
 
-# Ensure @electron/rebuild is installed
-if [ ! -e "$base/node_modules/.bin/electron-rebuild" ]; then
-  npm install @electron/rebuild >>$logfile 2>&1
+# Only run electron-rebuild if node-libgpiod was successfully installed
+if [ -d "$base/node_modules/node-libgpiod" ]; then
+  # Ensure @electron/rebuild is installed
+  if [ ! -e "$base/node_modules/.bin/electron-rebuild" ]; then
+    npm install @electron/rebuild >>$logfile 2>&1
+  fi
+
+  if [ -e "$base/node_modules/.bin/electron-rebuild" ]; then
+    "$base/node_modules/.bin/electron-rebuild"
+    exit $?
+  fi
+else
+  echo "node-libgpiod not installed (optional), skipping electron-rebuild."
+  echo "PIR sensor will use Python/gpiozero fallback."
 fi
 
-# Run electron-rebuild
-"$base/node_modules/.bin/electron-rebuild"
-exit $?
+exit 0
 
 
