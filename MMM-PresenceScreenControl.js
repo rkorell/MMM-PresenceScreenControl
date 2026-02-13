@@ -21,12 +21,12 @@ Module.register("MMM-PresenceScreenControl", {
     mqttPayloadOccupancyField: "presence",// Field in MQTT payload indicating presence
     onCommand: "vcgencmd display_power 1",// Command to turn the display ON
     offCommand: "vcgencmd display_power 0",// Command to turn the display OFF
+    vncDisconnectCommand: "sudo vncserver-x11 -service -disconnect", // VNC disconnect on dblclick (RealVNC). For wayvnc: "wayvncctl disconnect"
     counterTimeout: 120,                  // Seconds to keep the display on after last presence
     autoDimmer: true,                     // Enable/disable auto-dimming instead of instant off
     autoDimmerTimeout: 60,                // Seconds before auto-dimming triggers
     cronIgnoreWindows: [],                // Time windows to ignore all presence
     cronAlwaysOnWindows: [],              // Time windows to keep display always on
-    touchMode: 2,                         // Touch mode (0=off, 1=simple, 2=toggle, 3=advanced)
     style: 2,                             // Display style: 2 = bar, 0 = no graphic
     colorFrom: "red",                     // Bar color at timer end (empty)
     colorTo: "lime",                      // Bar color at timer start (full)
@@ -259,52 +259,39 @@ Module.register("MMM-PresenceScreenControl", {
       }
     }
 
-    // Overlay for "off" state (disabled mirror)
-    if (!this.presence) {
-      if (!document.getElementById("psc-global-overlay")) {
-        var overlay = document.createElement("div");
-        overlay.className = "psc-overlay";
-        overlay.id = "psc-global-overlay";
-        overlay.onclick = (e) => {
-          this.sendSocketNotification("TOUCH_EVENT", { type: "click" });
-        };
-        document.body.appendChild(overlay);
-      }
-    } else {
-      var existing = document.getElementById("psc-global-overlay");
-      if (existing) existing.parentNode.removeChild(existing);
-    }
+    // REMOVED: Overlay code - testing if this causes the problem
 
     return wrapper;
   },
 
   /**
-   * Handles click and touch events for manual override (touchMode).
-   * Sends events to node_helper for processing.
+   * Window-level click handler with timer-based double-click detection.
+   * Based on MMM-Pir screenTouch.js Mode 1 (only click, no mousedown/mouseup).
+   */
+  /**
+   * Window-level click handler with timer-based double-click detection.
+   * Single click: Wake up screen / reset timer
+   * Double click: Shut down screen AND disconnect VNC session
    */
   notificationReceived: function(notification, payload, sender) {
     if (notification === "DOM_OBJECTS_CREATED") {
-      var wrapper = document.querySelector(".psc-wrapper");
-      if (wrapper && this.config.touchMode > 0) {
-        wrapper.onclick = (e) => {
-          this.sendSocketNotification("TOUCH_EVENT", { type: "click" });
-        };
-        wrapper.ondblclick = (e) => {
-          this.sendSocketNotification("TOUCH_EVENT", { type: "dblclick" });
-        };
-        let pressTimer = null;
-        wrapper.onmousedown = (e) => {
-          pressTimer = window.setTimeout(() => {
-            this.sendSocketNotification("TOUCH_EVENT", { type: "longclick" });
-          }, 1000);
-        };
-        wrapper.onmouseup = (e) => {
-          clearTimeout(pressTimer);
-        };
-        wrapper.onmouseleave = (e) => {
-          clearTimeout(pressTimer);
-        };
-      }
+      var self = this;
+      var clickCount = 0;
+      var clickTimer = null;
+
+      window.addEventListener("click", function(e) {
+        clickCount++;
+        if (clickCount === 1) {
+          clickTimer = setTimeout(function() {
+            clickCount = 0;
+            self.sendSocketNotification("TOUCH_EVENT", { type: "click" });
+          }, 400);
+        } else if (clickCount === 2) {
+          clearTimeout(clickTimer);
+          clickCount = 0;
+          self.sendSocketNotification("TOUCH_EVENT", { type: "dblclick" });
+        }
+      }, false);
     }
   }
 });

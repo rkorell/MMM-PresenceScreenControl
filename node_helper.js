@@ -73,20 +73,13 @@ module.exports = NodeHelper.create({
   },
 
   handleTouch: function (payload) {
-    if (!this.config.touchMode || this.config.touchMode === 0) return;
-    let mode = this.config.touchMode;
     let event = payload.type;
-    this.log(`Touch event received: ${event} [mode ${mode}]`, "simple");
+    this.log(`Touch event received: ${event}`, "simple");
 
-    if (mode === 1) {
-      if (event === "click") this.triggerPresence();
-      if (event === "dblclick") this.shutdownScreen();
-    } else if (mode === 2) {
-      if (event === "click") this.triggerPresence();
-      if (event === "longclick") this.toggleScreen();
-    } else if (mode === 3) {
-      if (event === "click") this.triggerPresence();
-      if (event === "dblclick") this.shutdownScreen();
+    if (event === "click") {
+      this.triggerPresence();
+    } else if (event === "dblclick") {
+      this.shutdownScreen();
     }
   },
 
@@ -111,6 +104,18 @@ module.exports = NodeHelper.create({
     this.presence = false;
     this.counter = 0;
     this.updateScreen(false);
+
+    // Disconnect VNC session after screen off (prevents "mini window" problem)
+    if (this.config.vncDisconnectCommand) {
+      exec(this.config.vncDisconnectCommand, (err, stdout, stderr) => {
+        if (err) {
+          this.log("VNC disconnect error: " + err, "simple");
+        } else {
+          this.log("VNC session disconnected", "simple");
+        }
+      });
+    }
+
     this.sendPresenceUpdate();
   },
 

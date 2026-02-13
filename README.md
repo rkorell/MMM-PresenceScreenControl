@@ -50,8 +50,8 @@ We trimmed the fat:
 - **Cron windows are clear and reliable:**  
   Want the mirror always on for breakfast? You got it.  
   Want to ignore sensor triggers at night? No problem.
-- **Touch mode is still here:**  
-  Handy for remote use (VNC) or when you want to “poke” your mirror awake.
+- **Touch/click control with VNC support:**
+  Single click wakes up, double-click shuts down and disconnects VNC session.
 
 ---
 
@@ -62,7 +62,7 @@ We trimmed the fat:
 - **Flexible “ignore” and “always on” scheduling with cron-style time windows**
 - **Visual timer bar lets you (and your users) see what’s happening**
 - **Customizable screen ON/OFF commands – works on almost any system**
-- **Touch mode for manual override or remote (VNC) use**
+- **Touch/click control with automatic VNC disconnect on shutdown**
 - **No more bloat – just the essentials for a happy, smart MagicMirror**
 
 ---
@@ -136,7 +136,7 @@ Plug MMM-PresenceScreenControl into your MagicMirror `config.js` like any other 
 All configuration is done via module parameters.
 
 
-```js 
+```js
 {
   module: "MMM-PresenceScreenControl",
   position: "bottom_bar",
@@ -146,8 +146,10 @@ All configuration is done via module parameters.
     mqttServer: "mqtt://localhost:1883",
     mqttTopic: "sensor/presence",
     mqttPayloadOccupancyField: "presence",
-    onCommand: "vcgencmd display_power 1",
-    offCommand: "vcgencmd display_power 0",
+    onCommand: "DISPLAY=:0 xrandr --output HDMI-1 --mode 1920x1200 --rotate left",
+    offCommand: "DISPLAY=:0 xrandr --output HDMI-1 --off",
+    vncDisconnectCommand: "sudo vncserver-x11 -service -disconnect", // RealVNC
+    // vncDisconnectCommand: "wayvncctl disconnect", // wayvnc (Wayland)
     counterTimeout: 120,
     autoDimmer: true,
     autoDimmerTimeout: 60,
@@ -157,16 +159,14 @@ All configuration is done via module parameters.
     ],
     cronAlwaysOnWindows: [
       { from: "07:00", to: "08:30", days: [1,2,3,4,5] },
-      { from: "07:00", to: "09:00", days: [0,6] },
-      { from: "15:48", to: "16:08", days: [2] }
+      { from: "07:00", to: "09:00", days: [0,6] }
     ],
-    touchMode: 2,
     style: 2,
     colorFrom: "red",
     colorTo: "lime",
     colorCronActivation: "cornflowerblue",
     showPresenceStatus: true,
-    debug: "simple",
+    debug: "off",
     resetCountdownWidth: false
   }
 },
@@ -268,9 +268,11 @@ Here’s a breakdown of all the available options, with tips and friendly advice
   During these times, the screen is forced ON, no matter what the sensors say.  
   Perfect for breakfast, parties, or any time you want the mirror always awake.
 
-- **touchMode**  
-  (0=off, 1=simple, 2=toggle [default], 3=advanced)  
-  Enables manual “poke”/touch override (especially useful for VNC remote access).
+- **vncDisconnectCommand**
+  Command to disconnect VNC session on double-click (after screen off).
+  Default: `"sudo vncserver-x11 -service -disconnect"` (RealVNC on X11)
+  For wayvnc: `"wayvncctl disconnect"`
+  Set to `""` to disable VNC disconnect.
 
 - **colorFrom / colorTo / colorCronActivation**  
   Customize the progress bar colors:
@@ -349,9 +351,120 @@ Here’s a breakdown of all the available options, with tips and friendly advice
 
 ---
 
+## Touch Control & VNC Support
+
+MMM-PresenceScreenControl includes built-in touch/click support that works both locally and via VNC remote access.
+
+### Touch Behavior
+
+Touch handling is **always active** - no configuration needed:
+
+| Action | Effect |
+|--------|--------|
+| **Single click** | Wake up screen / reset timer |
+| **Double click** | Shut down screen AND disconnect VNC session |
+
+The double-click detection uses a 400ms timer window, which works reliably with VNC (unlike native `ondblclick` events that VNC doesn't handle well).
+
+### VNC Session Disconnect
+
+**Why automatic VNC disconnect on double-click?**
+
+When using VNC to remotely control the MagicMirror while the physical monitor is off (via xrandr `--off` or similar), VNC shows a "mini window" because the X11 framebuffer shrinks to minimal size. This creates a poor user experience.
+
+By automatically disconnecting the VNC session when shutting down the screen via double-click, this problem is avoided. The next time you connect via VNC, you can simply single-click to wake up the screen first.
+
+### vncDisconnectCommand Parameter
+
+Configure the VNC disconnect command for your system:
+
+```js
+// RealVNC (X11) - default:
+vncDisconnectCommand: "sudo vncserver-x11 -service -disconnect"
+
+// wayvnc (Wayland/labwc):
+vncDisconnectCommand: "wayvncctl disconnect"
+
+// Disable VNC disconnect (screen shutdown only):
+vncDisconnectCommand: ""
+```
+
+**Note:** The command runs after `offCommand`, so the screen turns off first, then VNC disconnects.
+
+---
+
+## Wayland/labwc Compatibility & Known Issues
+
+### The wlopm + VNC Problem (labwc)
+
+When running MagicMirror under **Wayland with labwc** compositor, there's a known bug that affects screen control via VNC:
+
+**Symptom:** `wlopm --off` commands execute successfully but the screen stays on when an active VNC session (wayvnc) exists.
+
+**Root Cause:** labwc's wlopm and wayvnc compete for display control. When wayvnc is connected, it keeps the output active regardless of wlopm commands.
+
+**References:**
+- https://github.com/labwc/labwc/issues/2279
+- https://forums.raspberrypi.com/viewtopic.php?t=370553
+
+### Solutions
+
+1. **X11 with xrandr + RealVNC** (tested, works)
+   - Screen commands: `xrandr --output HDMI-1 --off` / `xrandr --output HDMI-1 --auto`
+   - VNC disconnect: `sudo vncserver-x11 -service -disconnect`
+
+2. **Wayland with wlopm + wayvnc** (should work with VNC-Disconnect)
+   - The VNC-Disconnect feature (double-click) disconnects VNC before screen-off
+   - This eliminates the wlopm/wayvnc conflict since no active VNC session exists
+   - Screen commands: `wlopm --off HDMI-A-1` / `wlopm --on HDMI-A-1`
+   - VNC disconnect: `wayvncctl disconnect`
+   - PIR/MQTT-triggered screen control works regardless (no VNC involvement)
+
+### Cross-Platform Design
+
+This module supports both X11 and Wayland through configurable commands:
+- `onCommand` / `offCommand`: Adapt to your display server
+- `vncDisconnectCommand`: Adapt to your VNC implementation
+
+Simply change these config parameters - no code changes needed.
+
+---
+
+## GPIO on Modern Systems (Raspberry Pi 5, Debian Trixie)
+
+### The libgpiod 2.x Problem
+
+On newer systems (Debian 13 "Trixie", Raspberry Pi OS based on it), the GPIO library has been upgraded from libgpiod 1.x to **libgpiod 2.x**. This is a breaking API change.
+
+**Impact:** The npm package `node-libgpiod` (used for PIR sensor access) is incompatible with:
+- libgpiod 2.x (API incompatibility)
+- Electron 35+ (N-API compatibility issues)
+
+### Automatic Fallback to Python/gpiozero
+
+MMM-PresenceScreenControl automatically detects if `node-libgpiod` is unavailable and falls back to **Python with gpiozero**:
+
+- **pirLib.js** contains `gpiodDetect()` which checks library availability
+- If unavailable, it spawns `MotionSensor.py` using gpiozero (lgpio backend)
+- This works transparently - no configuration change needed
+
+**Requirements for fallback:**
+- Python 3 with gpiozero (`python3-gpiozero`)
+- lgpio library (`python3-lgpio`)
+- Both are typically pre-installed on Raspberry Pi OS
+
+### Tested Configurations
+
+| System | GPIO Library | Status |
+|--------|--------------|--------|
+| Debian 12 (Bookworm) + node-libgpiod | libgpiod 1.x | ✓ Works |
+| Debian 13 (Trixie) + Python/gpiozero | libgpiod 2.x | ✓ Works (auto-fallback) |
+
+---
+
 ## Troubleshooting and Known Issues
 
-- On Raspberry Pi or ARM systems, native modules (like node-libgpiod) may require a rebuild after installation.  
+- On Raspberry Pi or ARM systems, native modules (like node-libgpiod) may require a rebuild after installation.
   See installation section for details.
 
 - If the bar does not appear, check that `style` is set to `2` (bar), or use `0` for no graphics.
@@ -362,15 +475,101 @@ Here’s a breakdown of all the available options, with tips and friendly advice
 
 - For advanced cron time windows, check the syntax carefully.
 
+- **VNC shows mini window after screen off:** This is expected when the monitor is off via xrandr. Use double-click to disconnect VNC, or connect after waking the screen.
+
+- **GPIO errors on Debian Trixie:** The module automatically falls back to Python/gpiozero. Check that `python3-gpiozero` and `python3-lgpio` are installed.
+
 ---
 
 ## Credits & License
 
-Created by Dr. Ralf Korell, 2025,  
-with gratitude and credit to  
-- bugsounet/Coernel82 (MMM-Pir)  
-- olexs (MMM-MQTTScreenOnOff)  
+Created by Dr. Ralf Korell, 2025,
+with gratitude and credit to
+- bugsounet/Coernel82 (MMM-Pir)
+- olexs (MMM-MQTTScreenOnOff)
 
 MIT License.
 
 ---
+
+## Changelog
+
+### v1.1.0 (13.02.2026)
+
+**Major Changes: VNC Integration & Touch Simplification**
+
+This release addresses a critical compatibility issue with Wayland/labwc and improves VNC remote access usability.
+
+#### Background: The Wayland/VNC Problem
+
+When running MagicMirror under **Wayland with labwc** compositor, a known bug prevents proper screen control via VNC:
+- `wlopm --off` commands execute but the screen stays on when wayvnc is connected
+- This is a labwc issue where wayvnc and wlopm compete for display control
+- References: [labwc#2279](https://github.com/labwc/labwc/issues/2279), [RPi Forums](https://forums.raspberrypi.com/viewtopic.php?t=370553)
+
+**Solution:** The VNC-Disconnect feature (double-click disconnects VNC before screen-off) eliminates this conflict. Wayland should now work.
+
+#### The VNC "Mini Window" Problem
+
+When the physical monitor is off (via `xrandr --off`), the X11 framebuffer shrinks. VNC then shows only a tiny window, making remote control awkward. Users had to blindly click or guess coordinates.
+
+**Solution:** Automatic VNC session disconnect on double-click shutdown.
+
+#### Changes in This Release
+
+1. **New: `vncDisconnectCommand` parameter**
+   - Executes after `offCommand` on double-click
+   - Default: `"sudo vncserver-x11 -service -disconnect"` (RealVNC)
+   - For wayvnc: `"wayvncctl disconnect"`
+   - Set to `""` to disable
+
+2. **Removed: `touchMode` parameter (0-3)**
+   - The complex touch modes (off, simple, toggle, advanced) have been removed
+   - Touch handling is now always active with fixed behavior:
+     - Single click: Wake up / reset timer
+     - Double click: Shutdown screen + disconnect VNC
+   - This simplification was possible because:
+     - Mode 0 (off) was rarely used
+     - Modes 1-3 had overlapping functionality
+     - VNC disconnect makes toggle mode obsolete (you can't toggle if VNC is disconnected)
+
+3. **New: Automatic GPIO fallback for Debian Trixie**
+   - `pirLib.js` now auto-detects if `node-libgpiod` is unavailable
+   - Falls back to Python/gpiozero transparently
+   - No configuration change needed
+   - Supports both Debian 12 (Bookworm) and Debian 13 (Trixie)
+
+4. **New: `touchPresence` mechanism in node_helper**
+   - Separate presence flag for click events (vs. PIR/MQTT)
+   - Auto-timeout after 100ms allows countdown to proceed
+   - Fixes: VNC click woke screen but countdown didn't run
+
+#### Migration from v1.0.x
+
+1. **Remove `touchMode` from your config** (or leave it - it's ignored)
+2. **Add `vncDisconnectCommand`** if you use VNC:
+   ```js
+   vncDisconnectCommand: "sudo vncserver-x11 -service -disconnect", // RealVNC
+   // vncDisconnectCommand: "wayvncctl disconnect", // wayvnc
+   ```
+3. **For Wayland users:** The VNC-Disconnect feature should eliminate the wlopm/wayvnc conflict. Test with:
+   - `onCommand`: `wlopm --on HDMI-A-1`
+   - `offCommand`: `wlopm --off HDMI-A-1`
+   - `vncDisconnectCommand`: `wayvncctl disconnect`
+
+#### Wayland Compatibility
+
+The VNC-Disconnect feature (double-click disconnects VNC session before screen-off) was specifically designed to work around the labwc wlopm/wayvnc conflict. Since the VNC session is terminated before wlopm executes, there's no competition for display control. Wayland/labwc should now work - only config parameter changes needed, no code changes.
+
+---
+
+### v1.0.0 (Initial Release)
+
+- Combined features from MMM-Pir and MMM-MQTTScreenOnOff
+- PIR sensor support (GPIO via node-libgpiod)
+- MQTT presence detection
+- Auto-dimming with configurable timeout
+- Cron-based ignore and always-on windows
+- Visual timer bar with color gradient
+- Touch override modes (0-3)
+- Configurable screen ON/OFF commands
