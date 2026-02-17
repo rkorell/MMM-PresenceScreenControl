@@ -149,7 +149,7 @@ All configuration is done via module parameters.
     onCommand: "DISPLAY=:0 xrandr --output HDMI-1 --mode 1920x1200 --rotate left",
     offCommand: "DISPLAY=:0 xrandr --output HDMI-1 --off",
     vncDisconnectCommand: "sudo vncserver-x11 -service -disconnect", // RealVNC
-    // vncDisconnectCommand: "wayvncctl disconnect", // wayvnc (Wayland)
+    // vncDisconnectCommand: "sudo wayvncctl --socket=/tmp/wayvnc/wayvncctl.sock client-list | awk '{print $1}' | tr -d ':' | xargs -I{} sudo wayvncctl --socket=/tmp/wayvnc/wayvncctl.sock client-disconnect {}", // wayvnc (Wayland)
     counterTimeout: 120,
     autoDimmer: true,
     autoDimmerTimeout: 60,
@@ -271,7 +271,7 @@ Here’s a breakdown of all the available options, with tips and friendly advice
 - **vncDisconnectCommand**
   Command to disconnect VNC session on double-click (after screen off).
   Default: `"sudo vncserver-x11 -service -disconnect"` (RealVNC on X11)
-  For wayvnc: `"wayvncctl disconnect"`
+  For wayvnc (Wayland/labwc on Raspberry Pi): `"sudo wayvncctl --socket=/tmp/wayvnc/wayvncctl.sock client-list | awk '{print $1}' | tr -d ':' | xargs -I{} sudo wayvncctl --socket=/tmp/wayvnc/wayvncctl.sock client-disconnect {}"`
   Set to `""` to disable VNC disconnect.
 
 - **colorFrom / colorTo / colorCronActivation**  
@@ -382,8 +382,8 @@ Configure the VNC disconnect command for your system:
 // RealVNC (X11) - default:
 vncDisconnectCommand: "sudo vncserver-x11 -service -disconnect"
 
-// wayvnc (Wayland/labwc):
-vncDisconnectCommand: "wayvncctl disconnect"
+// wayvnc (Wayland/labwc) - queries client ID and disconnects:
+vncDisconnectCommand: "sudo wayvncctl --socket=/tmp/wayvnc/wayvncctl.sock client-list | awk '{print $1}' | tr -d ':' | xargs -I{} sudo wayvncctl --socket=/tmp/wayvnc/wayvncctl.sock client-disconnect {}"
 
 // Disable VNC disconnect (screen shutdown only):
 vncDisconnectCommand: ""
@@ -413,12 +413,13 @@ When running MagicMirror under **Wayland with labwc** compositor, there's a know
    - Screen commands: `xrandr --output HDMI-1 --off` / `xrandr --output HDMI-1 --auto`
    - VNC disconnect: `sudo vncserver-x11 -service -disconnect`
 
-2. **Wayland with wlopm + wayvnc** (should work with VNC-Disconnect)
+2. **Wayland with wlopm + wayvnc** (tested, works on Trixie - 17.02.2026)
    - The VNC-Disconnect feature (double-click) disconnects VNC before screen-off
    - This eliminates the wlopm/wayvnc conflict since no active VNC session exists
    - Screen commands: `wlopm --off HDMI-A-1` / `wlopm --on HDMI-A-1`
-   - VNC disconnect: `wayvncctl disconnect`
+   - VNC disconnect: `sudo wayvncctl --socket=/tmp/wayvnc/wayvncctl.sock client-list | awk '{print $1}' | tr -d ':' | xargs -I{} sudo wayvncctl --socket=/tmp/wayvnc/wayvncctl.sock client-disconnect {}`
    - PIR/MQTT-triggered screen control works regardless (no VNC involvement)
+   - **Note:** The wayvnc control socket on Raspberry Pi OS runs under user `vnc`, so `sudo` is required. The socket path `/tmp/wayvnc/wayvncctl.sock` is the Raspberry Pi OS default (set in `/usr/sbin/wayvnc-run.sh`).
 
 ### Cross-Platform Design
 
@@ -550,16 +551,18 @@ When the physical monitor is off (via `xrandr --off`), the X11 framebuffer shrin
 2. **Add `vncDisconnectCommand`** if you use VNC:
    ```js
    vncDisconnectCommand: "sudo vncserver-x11 -service -disconnect", // RealVNC
-   // vncDisconnectCommand: "wayvncctl disconnect", // wayvnc
+   // vncDisconnectCommand: "sudo wayvncctl --socket=/tmp/wayvnc/wayvncctl.sock client-list | awk '{print $1}' | tr -d ':' | xargs -I{} sudo wayvncctl --socket=/tmp/wayvnc/wayvncctl.sock client-disconnect {}", // wayvnc
    ```
 3. **For Wayland users:** The VNC-Disconnect feature should eliminate the wlopm/wayvnc conflict. Test with:
    - `onCommand`: `wlopm --on HDMI-A-1`
    - `offCommand`: `wlopm --off HDMI-A-1`
-   - `vncDisconnectCommand`: `wayvncctl disconnect`
+   - `vncDisconnectCommand`: `"sudo wayvncctl --socket=/tmp/wayvnc/wayvncctl.sock client-list | awk '{print $1}' | tr -d ':' | xargs -I{} sudo wayvncctl --socket=/tmp/wayvnc/wayvncctl.sock client-disconnect {}"`
 
 #### Wayland Compatibility
 
-The VNC-Disconnect feature (double-click disconnects VNC session before screen-off) was specifically designed to work around the labwc wlopm/wayvnc conflict. Since the VNC session is terminated before wlopm executes, there's no competition for display control. Wayland/labwc should now work - only config parameter changes needed, no code changes.
+The VNC-Disconnect feature (double-click disconnects VNC session before screen-off) was specifically designed to work around the labwc wlopm/wayvnc conflict. Since the VNC session is terminated before wlopm executes, there's no competition for display control.
+
+**Tested and confirmed working on 17.02.2026:** Debian 13 (Trixie), Raspberry Pi 5, labwc compositor, wayvnc 0.9.1, wlopm 0.1.0. Full cycle: PIR wakeup, VNC connect, single-click timer reset, double-click VNC disconnect + screen off.
 
 ---
 

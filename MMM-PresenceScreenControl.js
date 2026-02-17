@@ -21,7 +21,7 @@ Module.register("MMM-PresenceScreenControl", {
     mqttPayloadOccupancyField: "presence",// Field in MQTT payload indicating presence
     onCommand: "vcgencmd display_power 1",// Command to turn the display ON
     offCommand: "vcgencmd display_power 0",// Command to turn the display OFF
-    vncDisconnectCommand: "sudo vncserver-x11 -service -disconnect", // VNC disconnect on dblclick (RealVNC). For wayvnc: "wayvncctl disconnect"
+    vncDisconnectCommand: "sudo vncserver-x11 -service -disconnect", // VNC disconnect on dblclick (RealVNC). For wayvnc see README.
     counterTimeout: 120,                  // Seconds to keep the display on after last presence
     autoDimmer: true,                     // Enable/disable auto-dimming instead of instant off
     autoDimmerTimeout: 60,                // Seconds before auto-dimming triggers
