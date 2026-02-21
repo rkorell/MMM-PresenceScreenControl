@@ -1,7 +1,7 @@
 {
   "name": "MMM-PresenceScreenControl",
-  "version": "1.1.0",
-  "description": "MagicMirror² module for presence detection and screen control. Supports PIR (GPIO) and/or MQTT sensors, auto-dimming, cron schedules, and VNC integration with automatic session disconnect.",
+  "version": "1.2.0",
+  "description": "MagicMirror² module for presence detection and screen control. Supports PIR (GPIO) and/or MQTT sensors, auto-dimming, cron schedules, and touch wakeup.",
   "main": "MMM-PresenceScreenControl.js",
   "author": "Dr. Ralf Korell, 2025. Integration of MMM-Pir (bugsounet/Coernel82) & MMM-MQTTScreenOnOff (olexs)",
   "license": "MIT",

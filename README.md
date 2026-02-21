@@ -50,8 +50,8 @@ We trimmed the fat:
 - **Cron windows are clear and reliable:**  
   Want the mirror always on for breakfast? You got it.  
   Want to ignore sensor triggers at night? No problem.
-- **Touch/click control with VNC support:**
-  Single click wakes up, double-click shuts down and disconnects VNC session.
+- **Touch/click control:**
+  Click anywhere on the screen to wake up the display and reset the timer.
 
 ---
 
@@ -62,7 +62,7 @@ We trimmed the fat:
 - **Flexible “ignore” and “always on” scheduling with cron-style time windows**
 - **Visual timer bar lets you (and your users) see what’s happening**
 - **Customizable screen ON/OFF commands – works on almost any system**
-- **Touch/click control with automatic VNC disconnect on shutdown**
+- **Touch/click control for screen wakeup**
 - **No more bloat – just the essentials for a happy, smart MagicMirror**
 
 ---
@@ -148,8 +148,6 @@ All configuration is done via module parameters.
     mqttPayloadOccupancyField: "presence",
     onCommand: "DISPLAY=:0 xrandr --output HDMI-1 --mode 1920x1200 --rotate left",
     offCommand: "DISPLAY=:0 xrandr --output HDMI-1 --off",
-    vncDisconnectCommand: "sudo vncserver-x11 -service -disconnect", // RealVNC
-    // vncDisconnectCommand: "sudo wayvncctl --socket=/tmp/wayvnc/wayvncctl.sock client-list | awk '{print $1}' | tr -d ':' | xargs -I{} sudo wayvncctl --socket=/tmp/wayvnc/wayvncctl.sock client-disconnect {}", // wayvnc (Wayland)
     counterTimeout: 120,
     autoDimmer: true,
     autoDimmerTimeout: 60,
@@ -268,12 +266,6 @@ Here’s a breakdown of all the available options, with tips and friendly advice
   During these times, the screen is forced ON, no matter what the sensors say.  
   Perfect for breakfast, parties, or any time you want the mirror always awake.
 
-- **vncDisconnectCommand**
-  Command to disconnect VNC session on double-click (after screen off).
-  Default: `"sudo vncserver-x11 -service -disconnect"` (RealVNC on X11)
-  For wayvnc (Wayland/labwc on Raspberry Pi): `"sudo wayvncctl --socket=/tmp/wayvnc/wayvncctl.sock client-list | awk '{print $1}' | tr -d ':' | xargs -I{} sudo wayvncctl --socket=/tmp/wayvnc/wayvncctl.sock client-disconnect {}"`
-  Set to `""` to disable VNC disconnect.
-
 - **colorFrom / colorTo / colorCronActivation**  
   Customize the progress bar colors:
     - `colorTo`: Bar color when timer is full (usually green)
@@ -351,81 +343,29 @@ Here’s a breakdown of all the available options, with tips and friendly advice
 
 ---
 
-## Touch Control & VNC Support
+## Touch Control
 
 MMM-PresenceScreenControl includes built-in touch/click support that works both locally and via VNC remote access.
 
-### Touch Behavior
-
-Touch handling is **always active** - no configuration needed:
-
-| Action | Effect |
-|--------|--------|
-| **Single click** | Wake up screen / reset timer |
-| **Double click** | Shut down screen AND disconnect VNC session |
-
-The double-click detection uses a 400ms timer window, which works reliably with VNC (unlike native `ondblclick` events that VNC doesn't handle well).
-
-### VNC Session Disconnect
-
-**Why automatic VNC disconnect on double-click?**
-
-When using VNC to remotely control the MagicMirror while the physical monitor is off (via xrandr `--off` or similar), VNC shows a "mini window" because the X11 framebuffer shrinks to minimal size. This creates a poor user experience.
-
-By automatically disconnecting the VNC session when shutting down the screen via double-click, this problem is avoided. The next time you connect via VNC, you can simply single-click to wake up the screen first.
-
-### vncDisconnectCommand Parameter
-
-Configure the VNC disconnect command for your system:
-
-```js
-// RealVNC (X11) - default:
-vncDisconnectCommand: "sudo vncserver-x11 -service -disconnect"
-
-// wayvnc (Wayland/labwc) - queries client ID and disconnects:
-vncDisconnectCommand: "sudo wayvncctl --socket=/tmp/wayvnc/wayvncctl.sock client-list | awk '{print $1}' | tr -d ':' | xargs -I{} sudo wayvncctl --socket=/tmp/wayvnc/wayvncctl.sock client-disconnect {}"
-
-// Disable VNC disconnect (screen shutdown only):
-vncDisconnectCommand: ""
-```
-
-**Note:** The command runs after `offCommand`, so the screen turns off first, then VNC disconnects.
+Touch handling is **always active** - no configuration needed. Any click or touch anywhere on the screen wakes up the display and resets the presence timer.
 
 ---
 
-## Wayland/labwc Compatibility & Known Issues
+## Wayland/labwc Compatibility
 
-### The wlopm + VNC Problem (labwc)
+### VNC and Screen Power Management
 
-When running MagicMirror under **Wayland with labwc** compositor, there's a known bug that affects screen control via VNC:
+On **Wayland with labwc** compositor and **wayvnc**, screen power management works natively through the `wlr-output-power-management` protocol:
 
-**Symptom:** `wlopm --off` commands execute successfully but the screen stays on when an active VNC session (wayvnc) exists.
+- When a VNC client connects, wayvnc acquires a power-on hold (`output_acquire_power_on`), ensuring the screen stays on
+- When the last VNC client disconnects, wayvnc releases the hold (`output_release_power_on`), and the screen returns to its previous state
 
-**Root Cause:** labwc's wlopm and wayvnc compete for display control. When wayvnc is connected, it keeps the output active regardless of wlopm commands.
-
-**References:**
-- https://github.com/labwc/labwc/issues/2279
-- https://forums.raspberrypi.com/viewtopic.php?t=370553
-
-### Solutions
-
-1. **X11 with xrandr + RealVNC** (tested, works)
-   - Screen commands: `xrandr --output HDMI-1 --off` / `xrandr --output HDMI-1 --auto`
-   - VNC disconnect: `sudo vncserver-x11 -service -disconnect`
-
-2. **Wayland with wlopm + wayvnc** (tested, works on Trixie - 17.02.2026)
-   - The VNC-Disconnect feature (double-click) disconnects VNC before screen-off
-   - This eliminates the wlopm/wayvnc conflict since no active VNC session exists
-   - Screen commands: `wlopm --off HDMI-A-1` / `wlopm --on HDMI-A-1`
-   - VNC disconnect: `sudo wayvncctl --socket=/tmp/wayvnc/wayvncctl.sock client-list | awk '{print $1}' | tr -d ':' | xargs -I{} sudo wayvncctl --socket=/tmp/wayvnc/wayvncctl.sock client-disconnect {}`
-   - PIR/MQTT-triggered screen control works regardless (no VNC involvement)
-   - **Note:** The wayvnc control socket on Raspberry Pi OS runs under user `vnc`, so `sudo` is required. The socket path `/tmp/wayvnc/wayvncctl.sock` is the Raspberry Pi OS default (set in `/usr/sbin/wayvnc-run.sh`).
+This means: if the screen was off (PIR timeout) and you connect via VNC, the screen turns on automatically. When you close VNC, the screen goes back to off. No manual VNC disconnect commands are needed.
 
 ### Cross-Platform Design
 
 This module supports both X11 and Wayland through configurable commands:
 - `onCommand` / `offCommand`: Adapt to your display server
-- `vncDisconnectCommand`: Adapt to your VNC implementation
 
 Simply change these config parameters - no code changes needed.
 
@@ -476,8 +416,6 @@ MMM-PresenceScreenControl automatically detects if `node-libgpiod` is unavailabl
 
 - For advanced cron time windows, check the syntax carefully.
 
-- **VNC shows mini window after screen off:** This is expected when the monitor is off via xrandr. Use double-click to disconnect VNC, or connect after waking the screen.
-
 - **GPIO errors on Debian Trixie:** The module automatically falls back to Python/gpiozero. Check that `python3-gpiozero` and `python3-lgpio` are installed.
 
 ---
@@ -495,74 +433,40 @@ MIT License.
 
 ## Changelog
 
+### v1.2.0 (21.02.2026)
+
+**Removed: VNC Disconnect & Double-Click**
+
+The `vncDisconnectCommand` parameter and double-click screen shutdown have been removed.
+
+**Why?** wayvnc (0.9.1+) natively manages screen power via the `wlr-output-power-management` Wayland protocol:
+- VNC client connects → wayvnc acquires power-on hold → screen turns on
+- Last VNC client disconnects → wayvnc releases hold → screen returns to previous state
+
+The manual VNC disconnect workaround (double-click → disconnect VNC → screen off) is no longer needed. Touch/click now only wakes up the screen and resets the timer.
+
+#### Migration from v1.1.x
+
+1. **Remove `vncDisconnectCommand` from your config** (or leave it - it's ignored)
+2. Touch behavior is now single-click only (wakeup/timer reset)
+
+---
+
 ### v1.1.0 (13.02.2026)
 
-**Major Changes: VNC Integration & Touch Simplification**
+**Major Changes: Touch Simplification & GPIO Fallback**
 
-This release addresses a critical compatibility issue with Wayland/labwc and improves VNC remote access usability.
+1. **Removed: `touchMode` parameter (0-3)**
+   - Touch handling is now always active with fixed behavior (click = wakeup)
 
-#### Background: The Wayland/VNC Problem
-
-When running MagicMirror under **Wayland with labwc** compositor, a known bug prevents proper screen control via VNC:
-- `wlopm --off` commands execute but the screen stays on when wayvnc is connected
-- This is a labwc issue where wayvnc and wlopm compete for display control
-- References: [labwc#2279](https://github.com/labwc/labwc/issues/2279), [RPi Forums](https://forums.raspberrypi.com/viewtopic.php?t=370553)
-
-**Solution:** The VNC-Disconnect feature (double-click disconnects VNC before screen-off) eliminates this conflict. Wayland should now work.
-
-#### The VNC "Mini Window" Problem
-
-When the physical monitor is off (via `xrandr --off`), the X11 framebuffer shrinks. VNC then shows only a tiny window, making remote control awkward. Users had to blindly click or guess coordinates.
-
-**Solution:** Automatic VNC session disconnect on double-click shutdown.
-
-#### Changes in This Release
-
-1. **New: `vncDisconnectCommand` parameter**
-   - Executes after `offCommand` on double-click
-   - Default: `"sudo vncserver-x11 -service -disconnect"` (RealVNC)
-   - For wayvnc: `"wayvncctl disconnect"`
-   - Set to `""` to disable
-
-2. **Removed: `touchMode` parameter (0-3)**
-   - The complex touch modes (off, simple, toggle, advanced) have been removed
-   - Touch handling is now always active with fixed behavior:
-     - Single click: Wake up / reset timer
-     - Double click: Shutdown screen + disconnect VNC
-   - This simplification was possible because:
-     - Mode 0 (off) was rarely used
-     - Modes 1-3 had overlapping functionality
-     - VNC disconnect makes toggle mode obsolete (you can't toggle if VNC is disconnected)
-
-3. **New: Automatic GPIO fallback for Debian Trixie**
+2. **New: Automatic GPIO fallback for Debian Trixie**
    - `pirLib.js` now auto-detects if `node-libgpiod` is unavailable
    - Falls back to Python/gpiozero transparently
-   - No configuration change needed
    - Supports both Debian 12 (Bookworm) and Debian 13 (Trixie)
 
-4. **New: `touchPresence` mechanism in node_helper**
+3. **New: `touchPresence` mechanism in node_helper**
    - Separate presence flag for click events (vs. PIR/MQTT)
    - Auto-timeout after 100ms allows countdown to proceed
-   - Fixes: VNC click woke screen but countdown didn't run
-
-#### Migration from v1.0.x
-
-1. **Remove `touchMode` from your config** (or leave it - it's ignored)
-2. **Add `vncDisconnectCommand`** if you use VNC:
-   ```js
-   vncDisconnectCommand: "sudo vncserver-x11 -service -disconnect", // RealVNC
-   // vncDisconnectCommand: "sudo wayvncctl --socket=/tmp/wayvnc/wayvncctl.sock client-list | awk '{print $1}' | tr -d ':' | xargs -I{} sudo wayvncctl --socket=/tmp/wayvnc/wayvncctl.sock client-disconnect {}", // wayvnc
-   ```
-3. **For Wayland users:** The VNC-Disconnect feature should eliminate the wlopm/wayvnc conflict. Test with:
-   - `onCommand`: `wlopm --on HDMI-A-1`
-   - `offCommand`: `wlopm --off HDMI-A-1`
-   - `vncDisconnectCommand`: `"sudo wayvncctl --socket=/tmp/wayvnc/wayvncctl.sock client-list | awk '{print $1}' | tr -d ':' | xargs -I{} sudo wayvncctl --socket=/tmp/wayvnc/wayvncctl.sock client-disconnect {}"`
-
-#### Wayland Compatibility
-
-The VNC-Disconnect feature (double-click disconnects VNC session before screen-off) was specifically designed to work around the labwc wlopm/wayvnc conflict. Since the VNC session is terminated before wlopm executes, there's no competition for display control.
-
-**Tested and confirmed working on 17.02.2026:** Debian 13 (Trixie), Raspberry Pi 5, labwc compositor, wayvnc 0.9.1, wlopm 0.1.0. Full cycle: PIR wakeup, VNC connect, single-click timer reset, double-click VNC disconnect + screen off.
 
 ---
 

@@ -73,14 +73,8 @@ module.exports = NodeHelper.create({
   },
 
   handleTouch: function (payload) {
-    let event = payload.type;
-    this.log(`Touch event received: ${event}`, "simple");
-
-    if (event === "click") {
-      this.triggerPresence();
-    } else if (event === "dblclick") {
-      this.shutdownScreen();
-    }
+    this.log("Touch event received: click", "simple");
+    this.triggerPresence();
   },
 
   triggerPresence: function () {
@@ -97,35 +91,6 @@ module.exports = NodeHelper.create({
       this.touchTimer = null;
       this.updatePresence();
     }, 100);
-  },
-
-  shutdownScreen: function () {
-    this.log("Touch: Shutting down screen via touch event.", "simple");
-    this.presence = false;
-    this.counter = 0;
-    this.updateScreen(false);
-
-    // Disconnect VNC session after screen off (prevents "mini window" problem)
-    if (this.config.vncDisconnectCommand) {
-      exec(this.config.vncDisconnectCommand, (err, stdout, stderr) => {
-        if (err) {
-          this.log("VNC disconnect error: " + err, "simple");
-        } else {
-          this.log("VNC session disconnected", "simple");
-        }
-      });
-    }
-
-    this.sendPresenceUpdate();
-  },
-
-  toggleScreen: function () {
-    this.log("Touch: Toggling screen via touch event.", "simple");
-    if (this.presence) {
-      this.shutdownScreen();
-    } else {
-      this.triggerPresence();
-    }
   },
 
   // PRÄMISSENTREU: PIR-Integration mit eigenem State

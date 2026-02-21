@@ -21,7 +21,6 @@ Module.register("MMM-PresenceScreenControl", {
     mqttPayloadOccupancyField: "presence",// Field in MQTT payload indicating presence
     onCommand: "vcgencmd display_power 1",// Command to turn the display ON
     offCommand: "vcgencmd display_power 0",// Command to turn the display OFF
-    vncDisconnectCommand: "sudo vncserver-x11 -service -disconnect", // VNC disconnect on dblclick (RealVNC). For wayvnc see README.
     counterTimeout: 120,                  // Seconds to keep the display on after last presence
     autoDimmer: true,                     // Enable/disable auto-dimming instead of instant off
     autoDimmerTimeout: 60,                // Seconds before auto-dimming triggers
@@ -265,32 +264,14 @@ Module.register("MMM-PresenceScreenControl", {
   },
 
   /**
-   * Window-level click handler with timer-based double-click detection.
-   * Based on MMM-Pir screenTouch.js Mode 1 (only click, no mousedown/mouseup).
-   */
-  /**
-   * Window-level click handler with timer-based double-click detection.
-   * Single click: Wake up screen / reset timer
-   * Double click: Shut down screen AND disconnect VNC session
+   * Window-level click handler for touch/click wakeup.
+   * Any click wakes up the screen and resets the presence timer.
    */
   notificationReceived: function(notification, payload, sender) {
     if (notification === "DOM_OBJECTS_CREATED") {
       var self = this;
-      var clickCount = 0;
-      var clickTimer = null;
-
       window.addEventListener("click", function(e) {
-        clickCount++;
-        if (clickCount === 1) {
-          clickTimer = setTimeout(function() {
-            clickCount = 0;
-            self.sendSocketNotification("TOUCH_EVENT", { type: "click" });
-          }, 400);
-        } else if (clickCount === 2) {
-          clearTimeout(clickTimer);
-          clickCount = 0;
-          self.sendSocketNotification("TOUCH_EVENT", { type: "dblclick" });
-        }
+        self.sendSocketNotification("TOUCH_EVENT", { type: "click" });
       }, false);
     }
   }
