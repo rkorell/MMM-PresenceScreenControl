@@ -146,6 +146,8 @@ All configuration is done via module parameters.
     mqttServer: "mqtt://localhost:1883",
     mqttTopic: "sensor/presence",
     mqttPayloadOccupancyField: "presence",
+    mqttUser: "",
+    mqttPassword: "",
     onCommand: "DISPLAY=:0 xrandr --output HDMI-1 --mode 1920x1200 --rotate left",
     offCommand: "DISPLAY=:0 xrandr --output HDMI-1 --off",
     counterTimeout: 120,
@@ -193,9 +195,15 @@ Here’s a breakdown of all the available options, with tips and friendly advice
 - **mqttTopic**  
   MQTT topic to listen for presence messages.
 
-- **mqttPayloadOccupancyField**  
+- **mqttPayloadOccupancyField**
   Which field in the MQTT JSON payload contains the occupancy boolean.
   (For simple MQTT sensors, this is often just `"presence"`, containing "true" or "false".)
+
+- **mqttUser**
+  Username for MQTT broker authentication. Leave empty (`""`) for brokers without authentication.
+
+- **mqttPassword**
+  Password for MQTT broker authentication. Leave empty (`""`) for brokers without authentication.
 
 - **onCommand / offCommand**  
   The command to turn your screen ON or OFF.  
@@ -318,6 +326,22 @@ Here’s a breakdown of all the available options, with tips and friendly advice
   }
 }
 
+// MQTT with broker authentication:
+{
+  module: "MMM-PresenceScreenControl",
+  position: "bottom_bar",
+  config: {
+    mode: "MQTT",
+    mqttServer: "mqtt://your-broker:1883",
+    mqttTopic: "sensor/presence",
+    mqttPayloadOccupancyField: "presence",
+    mqttUser: "myuser",
+    mqttPassword: "mypassword",
+    onCommand: "xset dpms force on",
+    offCommand: "xset dpms force off"
+  }
+}
+
 // Config with ignore and always-on windows:
 {
   module: "MMM-PresenceScreenControl",
@@ -432,6 +456,19 @@ MIT License.
 ---
 
 ## Changelog
+
+### v1.3.0 (03.03.2026)
+
+**New: MQTT broker authentication**
+
+Added support for MQTT brokers that require username/password authentication.
+Two new optional config parameters: `mqttUser` and `mqttPassword`.
+Credentials are passed to the MQTT client only when configured (non-empty).
+Fully backwards-compatible — existing configurations without these parameters continue to work unchanged.
+
+Closes [#1](https://github.com/rkorell/MMM-PresenceScreenControl/issues/1).
+
+---
 
 ### v1.2.0 (21.02.2026)
 

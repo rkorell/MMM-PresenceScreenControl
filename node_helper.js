@@ -126,7 +126,10 @@ module.exports = NodeHelper.create({
     if (this.mqttClient) {
       try { this.mqttClient.end(); } catch (e) {}
     }
-    this.mqttClient = mqtt.connect(this.config.mqttServer);
+    var mqttOptions = {};
+    if (this.config.mqttUser) { mqttOptions.username = this.config.mqttUser; }
+    if (this.config.mqttPassword) { mqttOptions.password = this.config.mqttPassword; }
+    this.mqttClient = mqtt.connect(this.config.mqttServer, mqttOptions);
     this.mqttClient.on("connect", () => {
       this.mqttClient.subscribe(this.config.mqttTopic, (err) => {
         if (err) this.log("MQTT subscribe error: " + err, "simple");

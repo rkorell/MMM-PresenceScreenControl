@@ -19,6 +19,8 @@ Module.register("MMM-PresenceScreenControl", {
     mqttServer: "mqtt://localhost:1883",  // MQTT broker URL
     mqttTopic: "sensor/presence",         // MQTT topic for presence messages
     mqttPayloadOccupancyField: "presence",// Field in MQTT payload indicating presence
+    mqttUser: "",                          // MQTT broker username (optional)
+    mqttPassword: "",                      // MQTT broker password (optional)
     onCommand: "vcgencmd display_power 1",// Command to turn the display ON
     offCommand: "vcgencmd display_power 0",// Command to turn the display OFF
     counterTimeout: 120,                  // Seconds to keep the display on after last presence
