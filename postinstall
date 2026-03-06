@@ -12,7 +12,7 @@ logfile=/dev/null
 if [ -d "$base/node_modules/node-libgpiod" ]; then
   # Ensure @electron/rebuild is installed
   if [ ! -e "$base/node_modules/.bin/electron-rebuild" ]; then
-    npm install @electron/rebuild >>$logfile 2>&1
+    npm install @electron/rebuild@^4.0.0 >>$logfile 2>&1
   fi
 
   if [ -e "$base/node_modules/.bin/electron-rebuild" ]; then

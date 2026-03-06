@@ -457,6 +457,22 @@ MIT License.
 
 ## Changelog
 
+### v1.3.1 (06.03.2026)
+
+**Dependency cleanup: zero vulnerabilities**
+
+- Removed `@electron/rebuild` from `optionalDependencies`. It is now installed on-demand
+  by the postinstall script only when `node-libgpiod` is present (Bookworm with libgpiod 1.x).
+  This eliminates all npm deprecation warnings and 7 of 8 audit vulnerabilities that were caused
+  by transitive build-time dependencies (tar, glob, rimraf, minimatch, etc.).
+- Upgraded `mqtt` dependency from v4 to v5. The MQTT client API is fully backwards-compatible;
+  no configuration changes required. mqtt v5 eliminates the remaining minimatch vulnerability
+  via updated `help-me` dependency.
+- Result: `npm install` now reports **0 vulnerabilities** and **0 deprecation warnings**,
+  down from 8 vulnerabilities and 6 warnings. Package count reduced from 181 to 47.
+
+---
+
 ### v1.3.0 (03.03.2026)
 
 **New: MQTT broker authentication**
