@@ -2,14 +2,14 @@
 
 ## Motivation and Project Origin
 
-Let's be honest: everyone wants their MagicMirror to be smart and responsive –  
-but who wants to waste energy or keep fiddling with unreliable presence sensors?  
+Let's be honest: everyone wants their MagicMirror to be smart and responsive –
+but who wants to waste energy or keep fiddling with unreliable presence sensors?
 That’s where the journey of this module began.
 
 Previously, you had two choices:
-- **MMM-Pir** (by bugsounet/Coernel82):  
+- **MMM-Pir** (by bugsounet/Coernel82):
   Fancy, feature-rich, but a bit “heavy” and no longer maintained.
-- **MMM-MQTTScreenOnOff** (by olexs):  
+- **MMM-MQTTScreenOnOff** (by olexs):
   Simple, reliable, but missing those “extra” features and visual feedback.
 
 Why not get the best of both worlds? That’s what MMM-PresenceScreenControl aims to do!
@@ -18,11 +18,11 @@ Why not get the best of both worlds? That’s what MMM-PresenceScreenControl aim
 
 ## Acknowledgments
 
-**Big thanks** to the original creators/maintainers/keepers:  
-- [bugsounet](https://github.com/bugsounet) and [Coernel82](https://github.com/Coernel82) for MMM-Pir  
+**Big thanks** to the original creators/maintainers/keepers:
+- [bugsounet](https://github.com/bugsounet) and [Coernel82](https://github.com/Coernel82) for MMM-Pir
 - [olexs](https://github.com/olexs) for MMM-MQTTScreenOnOff
 
-Without their work, this project wouldn’t exist.  
+Without their work, this project wouldn’t exist.
 If you like what you see here, consider checking out their original modules too!
 
 ---
@@ -45,10 +45,10 @@ Each module had its strengths:
 We trimmed the fat:
 - **No more camera or relay support** (if you need that, check the original modules).
 - **No obfuscated code or install-time magic** – everything is here, readable, and ready to tweak.
-- **Screen ON/OFF is now just a command:**  
+- **Screen ON/OFF is now just a command:**
   You decide how your screen turns on or off – works for X11, Wayland, Pi, or any system.
-- **Cron windows are clear and reliable:**  
-  Want the mirror always on for breakfast? You got it.  
+- **Cron windows are clear and reliable:**
+  Want the mirror always on for breakfast? You got it.
   Want to ignore sensor triggers at night? No problem.
 - **Touch/click control:**
   Click anywhere on the screen to wake up the display and reset the timer.
@@ -104,7 +104,7 @@ git clone https://github.com/rkorell/MMM-PresenceScreenControl.git
 
 ```
 
-Install the required dependencies and rebuild native modules for Electron by navigating into the module's directory and running the following command:
+Install the required dependencies by navigating into the module's directory and running:
 
 
 ```bash
@@ -116,23 +116,22 @@ npm install
 ```
 
 **Important:**
-MMM-PresenceScreenControl uses native dependencies and requires an Electron rebuild after installation.
-This is handled automatically by the postinstall script defined in package.json.
-If you see any errors related to native modules or Electron versions during install,
-you can manually run the included postinstall script:
+MMM-PresenceScreenControl no longer requires `electron-rebuild`.
+PIR GPIO events are read via the `gpiod` CLI tool `gpiomon` (no native Node.js GPIO module).
 
+If `gpiomon` is missing, install it with:
 
 ```bash
-
-./postinstall
-
+sudo apt install gpiod
 ```
+
+If `gpiomon` is unavailable on your system, the module falls back automatically to Python/gpiozero (`MotionSensor.py`).
 
 ---
 
 ## Configuration
 
-Plug MMM-PresenceScreenControl into your MagicMirror `config.js` like any other module.  
+Plug MMM-PresenceScreenControl into your MagicMirror `config.js` like any other module.
 All configuration is done via module parameters.
 
 
@@ -179,20 +178,20 @@ All configuration is done via module parameters.
 
 Here’s a breakdown of all the available options, with tips and friendly advice.
 
-- **mode**  
-  `"PIR"`, `"MQTT"`, or `"PIR_MQTT"` (the default).  
-  - *“PIR”*: Only use the local PIR sensor.  
-  - *“MQTT”*: Only use remote/MQTT presence.  
+- **mode**
+  `"PIR"`, `"MQTT"`, or `"PIR_MQTT"` (the default).
+  - *“PIR”*: Only use the local PIR sensor.
+  - *“MQTT”*: Only use remote/MQTT presence.
   - *“PIR_MQTT”*: Use both – whichever sensor triggers, presence is active.
 
-- **pirGPIO**  
-  BCM pin number for your PIR sensor (if used).  
+- **pirGPIO**
+  BCM pin number for your PIR sensor (if used).
   Example: `4` is typical for Pi users.
 
-- **mqttServer**  
+- **mqttServer**
   URL for your MQTT broker, e.g. `mqtt://localhost:1883`
 
-- **mqttTopic**  
+- **mqttTopic**
   MQTT topic to listen for presence messages.
 
 - **mqttPayloadOccupancyField**
@@ -205,14 +204,14 @@ Here’s a breakdown of all the available options, with tips and friendly advice
 - **mqttPassword**
   Password for MQTT broker authentication. Leave empty (`""`) for brokers without authentication.
 
-- **onCommand / offCommand**  
-  The command to turn your screen ON or OFF.  
-  *This is where the magic happens!*  
-  You can use just about anything that works on your system.  
+- **onCommand / offCommand**
+  The command to turn your screen ON or OFF.
+  *This is where the magic happens!*
+  You can use just about anything that works on your system.
   Here are some great examples:
 
 ```js
-      
+
       # For Raspberry Pi (vcgencmd, HDMI on/off) (NOT suitable for bookworm or later):
       onCommand: "vcgencmd display_power 1"
       offCommand: "vcgencmd display_power 0"
@@ -248,49 +247,49 @@ Here’s a breakdown of all the available options, with tips and friendly advice
 
 ```
 
-- **counterTimeout**  
+- **counterTimeout**
   How long (in seconds) the display stays ON after the last presence event (from either sensor).
 
-- **autoDimmer**  
-  Set to `true` to dim the screen after `autoDimmerTimeout` seconds  
+- **autoDimmer**
+  Set to `true` to dim the screen after `autoDimmerTimeout` seconds
   (instead of turning it off right away).
 
-- **autoDimmerTimeout**  
+- **autoDimmerTimeout**
   How long (in seconds) before the auto-dimmer kicks in.
 
-- **cronIgnoreWindows**  
+- **cronIgnoreWindows**
   An object-array of time-windows: {from: "HH:MM", to: "HH:MM", days: [weekday_numbers]}
   "from": start time (24h format)
   "to": end time (24h format)
   "days": which weekdays to apply (0=Sunday, 1=Monday, ..., 6=Saturday)
-  During these times, all presence sensors are ignored and the screen will not turn on.  
+  During these times, all presence sensors are ignored and the screen will not turn on.
   Great for nighttime or “do not disturb” periods.
 
-- **cronAlwaysOnWindows**  
-  An object-array of time-windows: {from: "HH:MM", to: "HH:MM", days: [weekday_numbers]}  
+- **cronAlwaysOnWindows**
+  An object-array of time-windows: {from: "HH:MM", to: "HH:MM", days: [weekday_numbers]}
   "from": start time (24h format)
   "to": end time (24h format)
   "days": which weekdays to apply (0=Sunday, 1=Monday, ..., 6=Saturday)
-  During these times, the screen is forced ON, no matter what the sensors say.  
+  During these times, the screen is forced ON, no matter what the sensors say.
   Perfect for breakfast, parties, or any time you want the mirror always awake.
 
-- **colorFrom / colorTo / colorCronActivation**  
+- **colorFrom / colorTo / colorCronActivation**
   Customize the progress bar colors:
     - `colorTo`: Bar color when timer is full (usually green)
     - `colorFrom`: Bar color when timer is empty (usually red)
     - `colorCronActivation`: Bar color during always-on window (typically blue)
 
-- **showPresenceStatus**  
+- **showPresenceStatus**
   Set to `true` to show a “Presence: YES/NO” indicator above the bar.
 
-- **debug**  
+- **debug**
   Set the debug logging level:
     - `"off"` – no debug output
     - `"simple"` – standard info
     - `"complex"` – lots of details (useful for troubleshooting)
 
-- **resetCountdownWidth**  
-  If `true`, the always-on bar jumps to 100% width at the start of the final countdown.  
+- **resetCountdownWidth**
+  If `true`, the always-on bar jumps to 100% width at the start of the final countdown.
   If `false`, the bar continues smoothly from wherever it is – no sudden jumps.
 
 
@@ -299,7 +298,7 @@ Here’s a breakdown of all the available options, with tips and friendly advice
 
 ## Usage Examples
 
-```js 
+```js
 // Minimal config for PIR only:
 {
   module: "MMM-PresenceScreenControl",
@@ -397,40 +396,30 @@ Simply change these config parameters - no code changes needed.
 
 ## GPIO on Modern Systems (Raspberry Pi 5, Debian Trixie)
 
-### The libgpiod 2.x Problem
+MMM-PresenceScreenControl uses `gpiomon` from `gpiod` for PIR edge detection.
 
-On newer systems (Debian 13 "Trixie", Raspberry Pi OS based on it), the GPIO library has been upgraded from libgpiod 1.x to **libgpiod 2.x**. This is a breaking API change.
+**Benefits:**
+- No native Node.js GPIO dependency
+- No `electron-rebuild` required
+- Works with modern libgpiod setups (including libgpiod 2.x)
 
-**Impact:** The npm package `node-libgpiod` (used for PIR sensor access) is incompatible with:
-- libgpiod 2.x (API incompatibility)
-- Electron 35+ (N-API compatibility issues)
+The module auto-selects the GPIO chip:
+- Raspberry Pi 5: `gpiochip4`
+- Other systems: `gpiochip0` (or first available `/dev/gpiochip*`)
 
-### Automatic Fallback to Python/gpiozero
+### Automatic fallback to Python/gpiozero
 
-MMM-PresenceScreenControl automatically detects if `node-libgpiod` is unavailable and falls back to **Python with gpiozero**:
+If `gpiomon` is not installed or no GPIO chip is available, the module falls back to Python/gpiozero (`MotionSensor.py`).
 
-- **pirLib.js** contains `gpiodDetect()` which checks library availability
-- If unavailable, it spawns `MotionSensor.py` using gpiozero (lgpio backend)
-- This works transparently - no configuration change needed
-
-**Requirements for fallback:**
+**Fallback requirements:**
 - Python 3 with gpiozero (`python3-gpiozero`)
-- lgpio library (`python3-lgpio`)
-- Both are typically pre-installed on Raspberry Pi OS
-
-### Tested Configurations
-
-| System | GPIO Library | Status |
-|--------|--------------|--------|
-| Debian 12 (Bookworm) + node-libgpiod | libgpiod 1.x | ✓ Works |
-| Debian 13 (Trixie) + Python/gpiozero | libgpiod 2.x | ✓ Works (auto-fallback) |
+- lgpio backend (`python3-lgpio`)
 
 ---
 
 ## Troubleshooting and Known Issues
 
-- On Raspberry Pi or ARM systems, native modules (like node-libgpiod) may require a rebuild after installation.
-  See installation section for details.
+- For PIR mode, install `gpiod` so `gpiomon` is available (`sudo apt install gpiod`).
 
 - If the bar does not appear, check that `style` is set to `2` (bar), or use `0` for no graphics.
 
@@ -440,7 +429,7 @@ MMM-PresenceScreenControl automatically detects if `node-libgpiod` is unavailabl
 
 - For advanced cron time windows, check the syntax carefully.
 
-- **GPIO errors on Debian Trixie:** The module automatically falls back to Python/gpiozero. Check that `python3-gpiozero` and `python3-lgpio` are installed.
+- **GPIO errors on Debian Trixie:** Ensure `gpiomon` is installed (`gpiod` package). If unavailable, check fallback dependencies `python3-gpiozero` and `python3-lgpio`.
 
 ---
 
@@ -456,6 +445,17 @@ MIT License.
 ---
 
 ## Changelog
+
+### Unreleased
+
+**GPIO refactor & dependency cleanup**
+
+- Replaced native `node-libgpiod` access with `gpiomon` (`gpiod` CLI tools); compatible with libgpiod 1.x and 2.x.
+- Removed the `postinstall` electron rebuild flow entirely.
+- PIR mode now works without native Node.js rebuilds.
+- Kept automatic fallback to Python/gpiozero when `gpiomon` is unavailable.
+
+---
 
 ### v1.3.1 (06.03.2026)
 

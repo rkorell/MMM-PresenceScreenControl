@@ -8,12 +8,6 @@
   "dependencies": {
     "mqtt": "^5.3.5",
     "python-shell": "^5.0.0"
-  },
-  "optionalDependencies": {
-    "node-libgpiod": "^0.5.3"
-  },
-  "scripts": {
-    "postinstall": "./postinstall"
   }
 }
 
