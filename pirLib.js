@@ -101,7 +101,7 @@ class PIR {
           this.pirReadyToDetect = true;
           // RKORELL: Send PIR_LEFT callback so node_helper can set pirPresence = false.
           // Original MMM-Pir only used PIR_DETECTED; MMM-PresenceScreenControl needs both.
-          console.log("[PIR] NoMotion event fired, sending PIR_LEFT");
+          log("NoMotion event fired, sending PIR_LEFT");
           this.callback("PIR_LEFT");
           log("Debug: Set motion detect ready to:", this.pirReadyToDetect);
           break;

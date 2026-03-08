@@ -117,7 +117,7 @@ module.exports = NodeHelper.create({
       },
       (event, data) => {
         if (event === "PIR_DETECTED") {
-          console.log("[node_helper] PIR_DETECTED received");
+          this.log("[PIR] PIR_DETECTED received", "simple");
           this.pirPresence = true;
           // RKORELL: Touch-Mechanismus nullen wenn echte Präsenz erkannt
           this.touchPresence = false;
@@ -126,7 +126,7 @@ module.exports = NodeHelper.create({
             this.touchTimer = null;
           }
         } else if (event === "PIR_LEFT") {
-          console.log("[node_helper] PIR_LEFT received, setting pirPresence=false");
+          this.log("[PIR] PIR_LEFT received, setting pirPresence=false", "simple");
           this.pirPresence = false;
         }
         this.updatePresence();
@@ -193,7 +193,7 @@ module.exports = NodeHelper.create({
       }
       newPresence = sensorPresence || this.touchPresence;
     }
-    console.log(`[updatePresence] pirPresence=${this.pirPresence}, touchPresence=${this.touchPresence}, presence=${this.presence}, newPresence=${newPresence}`);
+    this.log(`[updatePresence] pirPresence=${this.pirPresence}, touchPresence=${this.touchPresence}, presence=${this.presence}, newPresence=${newPresence}`, "complex");
     if (newPresence) {
       this.presence = true;
       this.counter = this.config.counterTimeout;
@@ -310,7 +310,7 @@ module.exports = NodeHelper.create({
           this.dimmed = true;
         }
         if (this.counter <= 0) {
-          console.log(`[startCounter] Counter expired: presence=${this.presence}, pirPresence=${this.pirPresence}, calling updateScreen(false)`);
+          this.log(`[startCounter] Counter expired: presence=${this.presence}, pirPresence=${this.pirPresence}, calling updateScreen(false)`, "simple");
           this.updateScreen(false);
           clearInterval(this.timer);
           this.counter = 0;
@@ -329,16 +329,15 @@ module.exports = NodeHelper.create({
 
   updateScreen: function (on) {
     let cmd = on ? this.config.onCommand : this.config.offCommand;
-    console.log(`[updateScreen] on=${on}, cmd="${cmd}"`);
+    this.log(`[updateScreen] on=${on}, cmd="${cmd}"`, "simple");
     if (cmd) {
       exec(cmd, (err, stdout, stderr) => {
         if (err) {
-          console.log(`[updateScreen] ERROR: ${err}`);
+          console.error(`[updateScreen] ERROR: ${err}`);
           this.log("Screen command error: " + err, "simple");
         }
         else {
-          console.log(`[updateScreen] SUCCESS: executed "${cmd}"`);
-          this.log("Executed screen command: " + cmd, "simple");
+          this.log(`[updateScreen] SUCCESS: executed "${cmd}"`, "simple");
         }
       });
     }
