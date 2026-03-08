@@ -2,7 +2,7 @@
  * node_helper.js for MMM-PresenceScreenControl
  * Backend logic for presence and screen control using PIR and/or MQTT sensors.
  * Manages timers, cron-based ignore/always-on windows, auto-dimming, and executes user-supplied commands.
- * 
+ *
  * Author: Dr. Ralf Korell, 2025
  * Integrates logic and ideas from MMM-Pir (bugsounet/Coernel82) and MMM-MQTTScreenOnOff (olexs)
  * License: MIT
@@ -13,11 +13,8 @@ const NodeHelper = require("node_helper");
 const { exec } = require("child_process");
 const mqtt = require("mqtt");
 const fs = require("fs");
-const { spawn } = require("child_process");
 const path = require("path");
 const PIR = require("./pirLib");
-
-let pirProcess = null;
 
 module.exports = NodeHelper.create({
   start: function () {
@@ -40,6 +37,22 @@ module.exports = NodeHelper.create({
     this.touchPresence = false;
     this.touchTimer = null;
     this.alwaysOnWindow = null;
+  },
+
+  stop: function () {
+    if (this.timer) clearInterval(this.timer);
+    if (this.cronInterval) clearInterval(this.cronInterval);
+    if (this.touchTimer) clearTimeout(this.touchTimer);
+    if (this.pirInstance) {
+      this.pirInstance.stop();
+      this.pirInstance = null;
+    }
+    if (this.mqttClient) {
+      try {
+        this.mqttClient.end();
+      } catch (e) {}
+      this.mqttClient = null;
+    }
   },
 
   log: function (msg, level = "simple") {
@@ -97,11 +110,11 @@ module.exports = NodeHelper.create({
   startPirSensor: function () {
     if (this.pirInstance) this.pirInstance.stop();
     this.pirInstance = new PIR(
-      { 
+      {
         gpio: this.config.pirGPIO || 4,
         mode: 0,
         debug: (this.config.debug === "complex")
-      }, 
+      },
       (event, data) => {
         if (event === "PIR_DETECTED") {
           console.log("[node_helper] PIR_DETECTED received");
