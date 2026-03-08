@@ -80,6 +80,7 @@ module.exports = NodeHelper.create({
         this.startMqtt();
       }
       this.startCronMonitor();
+      this.updatePresence();
     } else if (notification === "TOUCH_EVENT") {
       this.handleTouch(payload);
     }

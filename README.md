@@ -115,6 +115,15 @@ npm install
 
 ```
 
+### Updating
+
+```bash
+cd ~/MagicMirror/modules/MMM-PresenceScreenControl
+rm -rf node_modules package-lock.json
+git pull
+npm install
+```
+
 **Important:**
 MMM-PresenceScreenControl no longer requires `electron-rebuild`.
 PIR GPIO events are read via the `gpiod` CLI tool `gpiomon` (no native Node.js GPIO module).
@@ -458,6 +467,12 @@ MIT License.
 - Kept automatic fallback to Python/gpiozero when `gpiomon` is unavailable.
 - Fixed log spam: routed all runtime `console.log` calls through the debug system (`simple`/`complex` levels).
 - Renamed log prefix from `[MMM-Pir]` to `[PresenceScreenControl]`.
+- Fixed startup behavior: screen now turns off after ~1 second if no presence is detected at startup.
+  Previously, the screen stayed on indefinitely until the first sensor event.
+  Reported by [@htilburgs](https://github.com/htilburgs).
+- Removed `package-lock.json` from repository tracking (added to `.gitignore`).
+  Prevents `git pull` conflicts after `npm install`.
+  Reported by [@htilburgs](https://github.com/htilburgs).
 
 ---
 
