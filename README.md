@@ -439,6 +439,7 @@ Created by Dr. Ralf Korell, 2025,
 with gratitude and credit to
 - bugsounet/Coernel82 (MMM-Pir)
 - olexs (MMM-MQTTScreenOnOff)
+- [KristjanESPERANTO](https://github.com/KristjanESPERANTO) for the gpiomon refactor ([PR #2](https://github.com/rkorell/MMM-PresenceScreenControl/pull/2))
 
 MIT License.
 
@@ -446,14 +447,17 @@ MIT License.
 
 ## Changelog
 
-### Unreleased
+### v1.4.0 (08.03.2026)
 
 **GPIO refactor & dependency cleanup**
 
 - Replaced native `node-libgpiod` access with `gpiomon` (`gpiod` CLI tools); compatible with libgpiod 1.x and 2.x.
+  Contributed by [@KristjanESPERANTO](https://github.com/KristjanESPERANTO) in [PR #2](https://github.com/rkorell/MMM-PresenceScreenControl/pull/2).
 - Removed the `postinstall` electron rebuild flow entirely.
 - PIR mode now works without native Node.js rebuilds.
 - Kept automatic fallback to Python/gpiozero when `gpiomon` is unavailable.
+- Fixed log spam: routed all runtime `console.log` calls through the debug system (`simple`/`complex` levels).
+- Renamed log prefix from `[MMM-Pir]` to `[PresenceScreenControl]`.
 
 ---
 
