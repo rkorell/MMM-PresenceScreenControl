@@ -159,6 +159,7 @@ All configuration is done via module parameters.
     onCommand: "DISPLAY=:0 xrandr --output HDMI-1 --mode 1920x1200 --rotate left",
     offCommand: "DISPLAY=:0 xrandr --output HDMI-1 --off",
     counterTimeout: 120,
+    startupGracePeriod: 0,
     autoDimmer: true,
     autoDimmerTimeout: 60,
     cronIgnoreWindows: [
@@ -176,7 +177,6 @@ All configuration is done via module parameters.
     showPresenceStatus: true,
     debug: "off",
     logFileName: "",
-    startupGracePeriod: 0,
     resetCountdownWidth: false
   }
 },
@@ -270,6 +270,13 @@ Here’s a breakdown of all the available options, with tips and friendly advice
 - **counterTimeout**
   How long (in seconds) the display stays ON after the last presence event (from either sensor).
 
+- **startupGracePeriod**
+  How long (in seconds) the screen stays on after module startup before the presence logic kicks in.
+    - `0` (default) – screen turns off after ~1 second if nobody is detected
+    - `30` – screen stays on for 30 seconds after startup, then turns off if nobody is present
+  Useful for verifying that a restart completed successfully. During the grace period, sensor
+  events work normally — if the PIR detects someone, the timer switches to `counterTimeout`.
+
 - **autoDimmer**
   Set to `true` to dim the screen after `autoDimmerTimeout` seconds
   (instead of turning it off right away).
@@ -315,13 +322,6 @@ Here’s a breakdown of all the available options, with tips and friendly advice
   Controls where debug output goes (requires `debug` to be set to `"simple"` or `"complex"`):
     - `""` (empty string, default) – writes to `console.log`, visible in `pm2 logs`
     - `"myfile.log"` – writes to that file in the module directory, for focused debugging
-
-- **startupGracePeriod**
-  How long (in seconds) the screen stays on after module startup before the presence logic kicks in.
-    - `0` (default) – screen turns off after ~1 second if nobody is detected
-    - `30` – screen stays on for 30 seconds after startup, then turns off if nobody is present
-  Useful for verifying that a restart completed successfully. During the grace period, sensor
-  events work normally — if the PIR detects someone, the timer switches to `counterTimeout`.
 
 - **resetCountdownWidth**
   If `true`, the always-on bar jumps to 100% width at the start of the final countdown.
@@ -405,7 +405,13 @@ Here’s a breakdown of all the available options, with tips and friendly advice
 
 MMM-PresenceScreenControl includes built-in touch/click support that works both locally and via VNC remote access.
 
-Touch handling is **always active** - no configuration needed. Any click or touch anywhere on the screen wakes up the display and resets the presence timer.
+Touch handling is **always active** — no configuration needed. A click or touch anywhere on the screen:
+- **Turns on the display** if it is currently off (executes `onCommand`)
+- **Resets the presence timer** to `counterTimeout`
+
+On Wayland with wayvnc, connecting via VNC already turns on the screen automatically (see below),
+so the click effectively only resets the timer. On X11, however, VNC does not control screen power,
+so the click-to-wake feature is essential for remote access.
 
 ---
 
@@ -420,12 +426,17 @@ On **Wayland with labwc** compositor and **wayvnc**, screen power management wor
 
 This means: if the screen was off (PIR timeout) and you connect via VNC, the screen turns on automatically. When you close VNC, the screen goes back to off. No manual VNC disconnect commands are needed.
 
+**Known issue:** On some occasions, disconnecting from VNC does not reliably trigger the screen-off
+transition. The screen may stay on until the next PIR timeout cycle turns it off. This issue is
+intermittent and not yet reproducible. If you experience this, simply wait for the normal presence
+timeout to turn off the screen.
+
 ### Cross-Platform Design
 
 This module supports both X11 and Wayland through configurable commands:
 - `onCommand` / `offCommand`: Adapt to your display server
 
-Simply change these config parameters - no code changes needed.
+Simply change these config parameters — no code changes needed.
 
 ---
 
