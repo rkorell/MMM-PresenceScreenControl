@@ -51,7 +51,7 @@ We trimmed the fat:
   Want the mirror always on for breakfast? You got it.
   Want to ignore sensor triggers at night? No problem.
 - **Touch/click control:**
-  Click anywhere on the screen to wake up the display and reset the timer.
+  Click anywhere on the screen to turn on the display (if off) and reset the presence timer.
 
 ---
 
@@ -62,7 +62,7 @@ We trimmed the fat:
 - **Flexible “ignore” and “always on” scheduling with cron-style time windows**
 - **Visual timer bar lets you (and your users) see what’s happening**
 - **Customizable screen ON/OFF commands – works on almost any system**
-- **Touch/click control for screen wakeup**
+- **Touch/click control for screen on and timer reset**
 - **No more bloat – just the essentials for a happy, smart MagicMirror**
 
 ---
