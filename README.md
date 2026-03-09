@@ -175,6 +175,8 @@ All configuration is done via module parameters.
     colorCronActivation: "cornflowerblue",
     showPresenceStatus: true,
     debug: "off",
+    logFileName: "",
+    startupGracePeriod: 0,
     resetCountdownWidth: false
   }
 },
@@ -249,10 +251,19 @@ Here’s a breakdown of all the available options, with tips and friendly advice
       onCommand: "sudo sh -c 'echo 0 > /sys/class/backlight/rpi_backlight/bl_power'"
       offCommand: "sudo sh -c 'echo 1 > /sys/class/backlight/rpi_backlight/bl_power'"
 
-      # For Wayland (on some newer systems with wlr-randr - bookworm and later...):
-      onCommand: "wlr-randr --output HDMI-A-1 --on"
-      offCommand: "wlr-randr --output HDMI-A-1 --off"
-      often you have to mention the correct DISPLAY for proper function, as well - see Xrandr above
+      # For Wayland with wlr-randr (Bookworm and later):
+      # Important: Use WAYLAND_DISPLAY (not DISPLAY) — wlr-randr is a Wayland tool.
+      # Find your socket name: ls /run/user/1000/wayland-*
+      onCommand: "WAYLAND_DISPLAY=wayland-0 wlr-randr --output HDMI-A-1 --on"
+      offCommand: "WAYLAND_DISPLAY=wayland-0 wlr-randr --output HDMI-A-1 --off"
+      # You can add --mode and --transform to the onCommand if needed, e.g.:
+      # onCommand: "WAYLAND_DISPLAY=wayland-0 wlr-randr --output HDMI-A-1 --on --mode 1920x1080 --transform 270"
+
+      # For Wayland with wlopm (recommended for Trixie and later):
+      # wlopm uses DPMS-level power management — more robust than wlr-randr --off.
+      # Install: sudo apt install wlopm
+      onCommand: "wlopm --on HDMI-A-1"
+      offCommand: "wlopm --off HDMI-A-1"
 
 ```
 
@@ -265,6 +276,7 @@ Here’s a breakdown of all the available options, with tips and friendly advice
 
 - **autoDimmerTimeout**
   How long (in seconds) before the auto-dimmer kicks in.
+  Must be less than `counterTimeout` — if set too high, it is automatically clamped.
 
 - **cronIgnoreWindows**
   An object-array of time-windows: {from: "HH:MM", to: "HH:MM", days: [weekday_numbers]}
@@ -296,6 +308,18 @@ Here’s a breakdown of all the available options, with tips and friendly advice
     - `"off"` – no debug output
     - `"simple"` – standard info
     - `"complex"` – lots of details (useful for troubleshooting)
+
+- **logFileName**
+  Controls where debug output goes (requires `debug` to be set to `"simple"` or `"complex"`):
+    - `""` (empty string, default) – writes to `console.log`, visible in `pm2 logs`
+    - `"myfile.log"` – writes to that file in the module directory, for focused debugging
+
+- **startupGracePeriod**
+  How long (in seconds) the screen stays on after module startup before the presence logic kicks in.
+    - `0` (default) – screen turns off after ~1 second if nobody is detected
+    - `30` – screen stays on for 30 seconds after startup, then turns off if nobody is present
+  Useful for verifying that a restart completed successfully. During the grace period, sensor
+  events work normally — if the PIR detects someone, the timer switches to `counterTimeout`.
 
 - **resetCountdownWidth**
   If `true`, the always-on bar jumps to 100% width at the start of the final countdown.
@@ -455,6 +479,33 @@ MIT License.
 ---
 
 ## Changelog
+
+### v1.5.0 (09.03.2026)
+
+**Logging, efficiency, and startup improvements**
+
+- New parameter `logFileName` (default: `""`): Controls where debug output goes.
+  Empty string (default) writes to `console.log` (visible in `pm2 logs`).
+  Set to a filename (e.g. `"debug.log"`) to write to a dedicated file in the module directory.
+  **Breaking change:** In v1.4.0, debug output always went to a local file and was not visible
+  in `pm2 logs`. Now it defaults to `console.log`. Set `logFileName` to restore the old behavior.
+- Improved cron monitor efficiency: No longer sends presence updates to the frontend every second
+  when nothing has changed. Updates are now only sent on state transitions (entering/leaving
+  cron windows) and during always-on countdown display. This eliminates unnecessary DOM rebuilds
+  when the screen is off.
+- New parameter `startupGracePeriod` (default: `0`): Seconds to keep the screen on after module
+  startup before presence logic kicks in. Set to `0` for immediate behavior (screen off after ~1s
+  if nobody present). Useful for verifying that a restart completed successfully.
+  Suggested by [@htilburgs](https://github.com/htilburgs).
+- Updated Wayland screen command examples: Added `wlopm` (recommended for Trixie+) and corrected
+  `wlr-randr` examples to use `WAYLAND_DISPLAY` instead of `DISPLAY`.
+- Fixed: Screen on/off commands were executed every second during always-on and ignore windows
+  instead of only on state transitions. Added screen state tracking to prevent redundant command
+  execution.
+- Fixed: `autoDimmerTimeout` is now automatically clamped to `counterTimeout - 1` if set too high.
+- Removed dead code: unused variables from earlier versions, unused CSS class `.psc-overlay`.
+
+---
 
 ### v1.4.0 (08.03.2026)
 

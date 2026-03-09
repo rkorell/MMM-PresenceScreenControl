@@ -3,8 +3,8 @@ from signal import pause
 import argparse, sys
 
 parser = argparse.ArgumentParser(
-    description='Read MotionSensor state from GPIO for MMM-Pir',
-    epilog="©bugsounet 2024"
+    description='Read MotionSensor state from GPIO for MMM-PresenceScreenControl',
+    epilog="Originally from MMM-Pir (bugsounet), adapted for MMM-PresenceScreenControl"
 )
 
 def gpio_check(x):

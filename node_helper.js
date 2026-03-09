@@ -24,19 +24,17 @@ module.exports = NodeHelper.create({
     this.dimmed = false;
     this.alwaysOn = false;
     this.ignoreActive = false;
-    this.touchActive = false;
     this.config = {};
     this.mqttClient = null;
-    this.logFile = path.join(__dirname, "MMM-PresenceScreenControl_local.log");
-    this.debug = "off";
-    this.touchScreenOn = false;
-    this.touchScreenOff = false;
     this.pirInstance = null;
     this.pirPresence = false;
     this.mqttPresence = false;
     this.touchPresence = false;
     this.touchTimer = null;
     this.alwaysOnWindow = null;
+    this.prevAlwaysOn = false;
+    this.prevIgnoreActive = false;
+    this.screenOn = null;
   },
 
   stop: function () {
@@ -56,12 +54,17 @@ module.exports = NodeHelper.create({
   },
 
   log: function (msg, level = "simple") {
-    const timestamp = new Date().toISOString();
-    const logMsg = `[${timestamp}] PresenceControl: ${msg}\n`;
-    if (this.config.debug && (this.config.debug === level || this.config.debug === "complex")) {
-      fs.appendFile(this.logFile, logMsg, err => {
-        if (err) console.error("PresenceControl (log write error):", err);
-      });
+    if (!this.config.debug || this.config.debug === "off") return;
+    if (this.config.debug === level || this.config.debug === "complex") {
+      const timestamp = new Date().toISOString();
+      const prefix = `[${timestamp}] PresenceControl: `;
+      if (this.config.logFileName) {
+        fs.appendFile(path.join(__dirname, this.config.logFileName), prefix + msg + "\n", err => {
+          if (err) console.error("PresenceControl (log write error):", err);
+        });
+      } else {
+        console.log(prefix + msg);
+      }
     }
     if (level === "complex" && this.config.debug === "complex") {
       this.sendSocketNotification("DEBUG_LOG", msg);
@@ -71,7 +74,10 @@ module.exports = NodeHelper.create({
   socketNotificationReceived: function (notification, payload) {
     if (notification === "CONFIG") {
       this.config = payload;
-      this.debug = payload.debug || "off";
+      if (this.config.autoDimmer && this.config.autoDimmerTimeout >= this.config.counterTimeout) {
+        this.config.autoDimmerTimeout = Math.max(0, this.config.counterTimeout - 1);
+        console.log(`PresenceControl: autoDimmerTimeout clamped to ${this.config.autoDimmerTimeout} (must be less than counterTimeout ${this.config.counterTimeout})`);
+      }
       this.log("Received config: " + JSON.stringify(this.config), "simple");
       if (this.config.mode === "PIR" || this.config.mode === "PIR_MQTT") {
         this.startPirSensor();
@@ -80,7 +86,15 @@ module.exports = NodeHelper.create({
         this.startMqtt();
       }
       this.startCronMonitor();
-      this.updatePresence();
+      if (this.config.startupGracePeriod > 0) {
+        this.presence = false;
+        this.counter = this.config.startupGracePeriod;
+        this.updateScreen(true);
+        this.startCounter();
+        this.sendPresenceUpdate();
+      } else {
+        this.updatePresence();
+      }
     } else if (notification === "TOUCH_EVENT") {
       this.handleTouch(payload);
     }
@@ -216,15 +230,21 @@ module.exports = NodeHelper.create({
       let alwaysOn = !!alwaysOnInfo;
       let ignoreActive = !alwaysOn && this.isNowInWindow(this.config.cronIgnoreWindows);
 
+      let alwaysOnChanged = (alwaysOn !== this.prevAlwaysOn);
+      let ignoreChanged = (ignoreActive !== this.prevIgnoreActive);
+
       this.alwaysOn = alwaysOn;
       this.ignoreActive = ignoreActive;
-      if (alwaysOn) {
-        this.alwaysOnWindow = alwaysOnInfo;
-      } else {
-        this.alwaysOnWindow = null;
+      this.alwaysOnWindow = alwaysOn ? alwaysOnInfo : null;
+      this.prevAlwaysOn = alwaysOn;
+      this.prevIgnoreActive = ignoreActive;
+
+      if (alwaysOnChanged || ignoreChanged) {
+        this.log("Cron transition: alwaysOn=" + alwaysOn + ", ignoreActive=" + ignoreActive, "simple");
+        this.updatePresence();
+      } else if (alwaysOn) {
+        this.sendPresenceUpdate();
       }
-      this.log("Cron check: alwaysOn=" + alwaysOn + ", ignoreActive=" + ignoreActive, "complex");
-      this.sendPresenceUpdate();
     }, 1000);
   },
 
@@ -329,6 +349,8 @@ module.exports = NodeHelper.create({
   },
 
   updateScreen: function (on) {
+    if (on === this.screenOn) return;
+    this.screenOn = on;
     let cmd = on ? this.config.onCommand : this.config.offCommand;
     this.log(`[updateScreen] on=${on}, cmd="${cmd}"`, "simple");
     if (cmd) {

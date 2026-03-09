@@ -24,6 +24,7 @@ Module.register("MMM-PresenceScreenControl", {
     onCommand: "vcgencmd display_power 1",// Command to turn the display ON
     offCommand: "vcgencmd display_power 0",// Command to turn the display OFF
     counterTimeout: 120,                  // Seconds to keep the display on after last presence
+    startupGracePeriod: 0,               // Seconds to keep screen on after startup (0 = off after ~1s if nobody present)
     autoDimmer: true,                     // Enable/disable auto-dimming instead of instant off
     autoDimmerTimeout: 60,                // Seconds before auto-dimming triggers
     cronIgnoreWindows: [],                // Time windows to ignore all presence
@@ -34,6 +35,7 @@ Module.register("MMM-PresenceScreenControl", {
     colorCronActivation: "cornflowerblue",// Bar color during always-on window
     showPresenceStatus: true,             // Show "Presence: YES/NO" above the bar
     debug: "simple",                      // Debug level: "off", "simple", "complex"
+    logFileName: "",                      // Log destination: "" = console.log (pm2 logs), "file.log" = file in module dir
     resetCountdownWidth: false            // If true, bar jumps to 100% at always-on countdown start
   },
 
@@ -259,8 +261,6 @@ Module.register("MMM-PresenceScreenControl", {
         wrapper.appendChild(timeDiv);
       }
     }
-
-    // REMOVED: Overlay code - testing if this causes the problem
 
     return wrapper;
   },
