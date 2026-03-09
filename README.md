@@ -296,9 +296,11 @@ Here’s a breakdown of all the available options, with tips and friendly advice
 
 - **colorFrom / colorTo / colorCronActivation**
   Customize the progress bar colors:
-    - `colorTo`: Bar color when timer is full (usually green)
-    - `colorFrom`: Bar color when timer is empty (usually red)
+    - `colorTo`: Bar color when the timer is **full** (presence just detected → usually green/lime)
+    - `colorFrom`: Bar color when the timer is **empty** (about to turn off → usually red)
     - `colorCronActivation`: Bar color during always-on window (typically blue)
+  With the defaults (`colorFrom: "red"`, `colorTo: "lime"`), the bar starts green and gradually
+  turns red as time runs out — like a traffic light.
 
 - **showPresenceStatus**
   Set to `true` to show a “Presence: YES/NO” indicator above the bar.
