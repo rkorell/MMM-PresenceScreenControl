@@ -32,6 +32,7 @@ module.exports = NodeHelper.create({
     this.touchPresence = false;
     this.touchTimer = null;
     this.alwaysOnWindow = null;
+    this.cronInterval = null;
     this.prevAlwaysOn = false;
     this.prevIgnoreActive = false;
     this.screenOn = null;
@@ -364,7 +365,6 @@ module.exports = NodeHelper.create({
         }
       });
     }
-    this.sendPresenceUpdate();
   },
 
   sendPresenceUpdate: function () {

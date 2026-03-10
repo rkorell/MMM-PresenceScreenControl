@@ -1,12 +1,9 @@
 .psc-wrapper {
   background: rgba(0,0,0,0.2);
   color: #fff;
- /* padding: 10px 20px;
-  border-radius: 10px;*/
   font-size: 1.1em;
   width: 100%;
   text-align: left !important;
-
 }
 
 .psc-on {

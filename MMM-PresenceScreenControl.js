@@ -34,7 +34,7 @@ Module.register("MMM-PresenceScreenControl", {
     colorTo: "lime",                      // Bar color at timer start (full)
     colorCronActivation: "cornflowerblue",// Bar color during always-on window
     showPresenceStatus: true,             // Show "Presence: YES/NO" above the bar
-    debug: "simple",                      // Debug level: "off", "simple", "complex"
+    debug: "off",                          // Debug level: "off", "simple", "complex"
     logFileName: "",                      // Log destination: "" = console.log (pm2 logs), "file.log" = file in module dir
     resetCountdownWidth: false            // If true, bar jumps to 100% at always-on countdown start
   },
@@ -160,8 +160,8 @@ Module.register("MMM-PresenceScreenControl", {
   },
 
   /**
-   * Main DOM rendering: Shows presence status, timer bar, timer text, and overlay.
-   * Handles always-on and ignore logic, visual timer bar, and touch overlay.
+   * Main DOM rendering: Shows presence status, timer bar, and timer text.
+   * Handles always-on and ignore logic, and visual timer bar.
    */
   getDom: function () {
     var wrapper = document.createElement("div");
