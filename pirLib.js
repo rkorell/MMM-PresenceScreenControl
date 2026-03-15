@@ -16,6 +16,8 @@ var log = () => { /* do nothing */ };
 const fs = require("fs");
 const { execSync, spawn, spawnSync } = require("child_process");
 
+const GPIOGET_TIMEOUT_MS = 2 * 1000;
+
 class PIR {
   constructor (config, callback) {
     this.config = config;
@@ -27,7 +29,7 @@ class PIR {
       debounceMs: 200
     };
     this.config = Object.assign({}, this.default, this.config);
-    if (this.config.debug) log = (...args) => { console.log("[PresenceScreenControl] [PIR]", ...args); };
+    if (this.config.debug) log = (...args) => { console.log("[PIR]", ...args); };
     this.pir = null;
     this.gpioMonitor = null;
     this.running = false;
@@ -36,19 +38,19 @@ class PIR {
 
   start () {
     if (this.running) return;
-    if (this.config.gpio === 0) return console.log("[PresenceScreenControl] [PIR] Disabled.");
+    if (this.config.gpio === 0) return console.log("[PIR] Disabled.");
     switch (this.config.mode) {
       case 0:
-        console.log("[PresenceScreenControl] [PIR] Mode 0 Selected (gpiomon CLI)");
+        console.log("[PIR] Mode 0 Selected (gpiomon CLI)");
         this.gpiodDetect();
         break;
       case 1:
-        console.log("[PresenceScreenControl] [PIR] Mode 1 Selected (gpiozero)");
+        console.log("[PIR] Mode 1 Selected (gpiozero)");
         this.gpiozeroDetect();
         break;
       default:
-        console.warn(`[PresenceScreenControl] [PIR] mode: ${this.config.mode} is not a valid value`);
-        console.warn("[PresenceScreenControl] [PIR] set mode 0");
+        console.warn(`[PIR] mode: ${this.config.mode} is not a valid value`);
+        console.warn("[PIR] set mode 0");
         this.config.mode = 0;
         this.gpiodDetect();
         break;
@@ -81,7 +83,7 @@ class PIR {
 
     this.pir = new PythonShell("MotionSensor.py", options);
     this.callback("PIR_STARTED");
-    console.log("[PresenceScreenControl] [PIR] Started!");
+    console.log("[PIR] Started!");
     this.pirReadyToDetect = true;
     this.running = true;
 
@@ -106,7 +108,7 @@ class PIR {
           log("Debug: Set motion detect ready to:", this.pirReadyToDetect);
           break;
         default:
-          console.error("[PresenceScreenControl] [PIR] ", message);
+          console.error("[PIR] ", message);
           this.callback("PIR_ERROR", message);
           this.running = false;
           break;
@@ -114,32 +116,32 @@ class PIR {
     });
 
     this.pir.on("stderr", (stderr) => {
-      if (this.config.debug) console.error("[PresenceScreenControl] [PIR]", stderr);
+      if (this.config.debug) console.error("[PIR]", stderr);
       this.running = false;
     });
 
     this.pir.end((err, code, signal) => {
       if (err) {
-        console.error("[PresenceScreenControl] [PIR] [PYTHON]", err);
+        console.error("[PIR] [PYTHON]", err);
         this.callback("PIR_ERROR", err.message);
       }
       this.running = false;
       this.pir = null;
-      console.warn(`[PresenceScreenControl] [PIR] [PYTHON] The exit code was: ${code}`);
-      console.warn(`[PresenceScreenControl] [PIR] [PYTHON] The exit signal was: ${signal}`);
+      console.warn(`[PIR] [PYTHON] The exit code was: ${code}`);
+      console.warn(`[PIR] [PYTHON] The exit signal was: ${signal}`);
     });
   }
 
   isGpiomonAvailable () {
     if (process.platform !== "linux") {
-      console.warn("[PresenceScreenControl] [PIR] [GPIOMON] Not running on Linux.");
+      console.warn("[PIR] [GPIOMON] Not running on Linux.");
       return false;
     }
     try {
       execSync("which gpiomon", { stdio: "ignore" });
       return true;
     } catch {
-      console.warn("[PresenceScreenControl] [PIR] [GPIOMON] gpiomon not found. Install gpiod tools (sudo apt install gpiod).");
+      console.warn("[PIR] [GPIOMON] gpiomon not found. Install gpiod tools (sudo apt install gpiod).");
       return false;
     }
   }
@@ -179,13 +181,13 @@ class PIR {
       const match = output.match(/v?(\d+)\./);
       if (match) {
         const major = parseInt(match[1], 10);
-        console.log(`[PresenceScreenControl] [PIR] [GPIOMON] Detected libgpiod major version: ${major}`);
+        console.log(`[PIR] [GPIOMON] Detected libgpiod major version: ${major}`);
         return major;
       }
     } catch {
       // ignore
     }
-    console.warn("[PresenceScreenControl] [PIR] [GPIOMON] Could not detect gpiomon version, assuming 1.x");
+    console.warn("[PIR] [GPIOMON] Could not detect gpiomon version, assuming 1.x");
     return 1;
   }
 
@@ -207,7 +209,7 @@ class PIR {
 
   gpiodDetect () {
     if (!this.isGpiomonAvailable()) {
-      console.log("[PresenceScreenControl] [PIR] [GPIOMON] Falling back to Python/gpiozero (mode 1)");
+      console.log("[PIR] [GPIOMON] Falling back to Python/gpiozero (mode 1)");
       this.config.mode = 1;
       this.gpiozeroDetect();
       return;
@@ -215,7 +217,7 @@ class PIR {
 
     const chip = this.getGpioChip();
     if (!chip) {
-      console.error("[PresenceScreenControl] [PIR] [GPIOMON] No usable GPIO chip found, falling back to Python/gpiozero.");
+      console.error("[PIR] [GPIOMON] No usable GPIO chip found, falling back to Python/gpiozero.");
       this.config.mode = 1;
       this.gpiozeroDetect();
       return;
@@ -231,15 +233,33 @@ class PIR {
         ? Math.round(debounceValue)
         : 200;
       args = ["-c", chip, "-p", `${debounceMs}ms`, pin];
-      console.log(`[PresenceScreenControl] [PIR] [GPIOMON] Starting gpiomon (libgpiod 2.x) on ${chip} line ${pin} (debounce ${debounceMs}ms)`);
+      console.log(`[PIR] [GPIOMON] Starting gpiomon (libgpiod 2.x) on ${chip} line ${pin} (debounce ${debounceMs}ms)`);
     } else {
       // libgpiod 1.x: gpiomon <chip> <line>  (no -c flag, no debounce flag)
       args = [chip, pin];
-      console.log(`[PresenceScreenControl] [PIR] [GPIOMON] Starting gpiomon (libgpiod 1.x) on ${chip} line ${pin}`);
+      console.log(`[PIR] [GPIOMON] Starting gpiomon (libgpiod 1.x) on ${chip} line ${pin}`);
     }
+    // Check initial GPIO state before starting edge monitor (Issue #4)
+    try {
+      const getArgs = version >= 2
+        ? ["-c", chip, "--numeric", pin]
+        : [chip, pin];
+      const result = spawnSync("gpioget", getArgs, {
+        encoding: "utf8",
+        timeout: GPIOGET_TIMEOUT_MS
+      });
+      const initialState = result.status === 0 ? result.stdout.trim() : "error";
+      console.log(`[PIR] [GPIOMON] Initial GPIO state: ${initialState === "1" ? "HIGH" : "LOW"}`);
+      if (initialState === "1") {
+        this.callback("PIR_DETECTED");
+      }
+    } catch (err) {
+      console.warn(`[PIR] [GPIOMON] gpioget initial state check failed: ${err.message}`);
+    }
+
     this.gpioMonitor = spawn("gpiomon", args);
     this.callback("PIR_STARTED");
-    console.log("[PresenceScreenControl] [PIR] Started!");
+    console.log("[PIR] Started!");
     this.running = true;
 
     this.gpioMonitor.stdout.on("data", (data) => this.parseGpiomonOutput(data));
@@ -247,13 +267,13 @@ class PIR {
     this.gpioMonitor.stderr.on("data", (stderr) => {
       const message = stderr.toString().trim();
       if (message) {
-        console.error(`[PresenceScreenControl] [PIR] [GPIOMON] ${message}`);
+        console.error(`[PIR] [GPIOMON] ${message}`);
       }
     });
 
     this.gpioMonitor.on("close", (code) => {
       if (code !== null && code !== 0 && this.running) {
-        console.error(`[PresenceScreenControl] [PIR] [GPIOMON] gpiomon exited with code ${code}, falling back to Python/gpiozero.`);
+        console.error(`[PIR] [GPIOMON] gpiomon exited with code ${code}, falling back to Python/gpiozero.`);
         this.gpioMonitor = null;
         this.running = false;
         this.config.mode = 1;
@@ -265,7 +285,7 @@ class PIR {
     });
 
     this.gpioMonitor.on("error", (err) => {
-      console.error(`[PresenceScreenControl] [PIR] [GPIOMON] Failed to start gpiomon: ${err.message}`);
+      console.error(`[PIR] [GPIOMON] Failed to start gpiomon: ${err.message}`);
       this.callback("PIR_ERROR", err.message);
       this.gpioMonitor = null;
       this.running = false;
