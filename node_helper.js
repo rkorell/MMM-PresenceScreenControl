@@ -12,9 +12,12 @@
 const NodeHelper = require("node_helper");
 const { exec } = require("child_process");
 const mqtt = require("mqtt");
+const net = require("net");
 const fs = require("fs");
 const path = require("path");
 const PIR = require("./pirLib");
+
+const WAKEUP_SOCKET_NAME = "mmm-psc-wakeup.sock";
 
 module.exports = NodeHelper.create({
   start: function () {
@@ -36,6 +39,8 @@ module.exports = NodeHelper.create({
     this.prevAlwaysOn = false;
     this.prevIgnoreActive = false;
     this.screenOn = null;
+    this.wakeupServer = null;
+    this.wakeupSocketPath = null;
   },
 
   stop: function () {
@@ -52,6 +57,7 @@ module.exports = NodeHelper.create({
       } catch (e) {}
       this.mqttClient = null;
     }
+    this.stopWakeupListener();
   },
 
   log: function (msg, level = "simple") {
@@ -87,6 +93,9 @@ module.exports = NodeHelper.create({
         this.startMqtt();
       }
       this.startCronMonitor();
+      if (this.config.treatExternalWakeupAsPresence) {
+        this.startWakeupListener();
+      }
       if (this.config.startupGracePeriod > 0) {
         this.presence = false;
         this.counter = this.config.startupGracePeriod;
@@ -120,6 +129,38 @@ module.exports = NodeHelper.create({
       this.touchTimer = null;
       this.updatePresence();
     }, 100);
+  },
+
+  startWakeupListener: function () {
+    const runtimeDir = process.env.XDG_RUNTIME_DIR || "/tmp";
+    this.wakeupSocketPath = path.join(runtimeDir, WAKEUP_SOCKET_NAME);
+    try { fs.unlinkSync(this.wakeupSocketPath); } catch (e) {}
+    this.wakeupServer = net.createServer((conn) => {
+      conn.on("data", () => {
+        this.log("[ExternalWakeup] received ping, triggering presence", "simple");
+        this.triggerPresence();
+        conn.end();
+      });
+      conn.on("error", () => {});
+    });
+    this.wakeupServer.on("error", (err) => {
+      console.error("PresenceControl: wakeup socket error: " + err);
+      this.log("[ExternalWakeup] socket error: " + err, "simple");
+    });
+    this.wakeupServer.listen(this.wakeupSocketPath, () => {
+      this.log("[ExternalWakeup] listening on " + this.wakeupSocketPath, "simple");
+    });
+  },
+
+  stopWakeupListener: function () {
+    if (this.wakeupServer) {
+      try { this.wakeupServer.close(); } catch (e) {}
+      this.wakeupServer = null;
+    }
+    if (this.wakeupSocketPath) {
+      try { fs.unlinkSync(this.wakeupSocketPath); } catch (e) {}
+      this.wakeupSocketPath = null;
+    }
   },
 
   // PRÄMISSENTREU: PIR-Integration mit eigenem State

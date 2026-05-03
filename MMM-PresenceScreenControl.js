@@ -36,7 +36,8 @@ Module.register("MMM-PresenceScreenControl", {
     showPresenceStatus: true,             // Show "Presence: YES/NO" above the bar
     debug: "off",                          // Debug level: "off", "simple", "complex"
     logFileName: "",                      // Log destination: "" = console.log (pm2 logs), "file.log" = file in module dir
-    resetCountdownWidth: false            // If true, bar jumps to 100% at always-on countdown start
+    resetCountdownWidth: false,           // If true, bar jumps to 100% at always-on countdown start
+    treatExternalWakeupAsPresence: false  // If true, listen on a Unix socket and treat external screen-on signals as presence
   },
 
   fadeTimers: [],

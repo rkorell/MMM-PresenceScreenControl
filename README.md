@@ -431,6 +431,32 @@ transition. The screen may stay on until the next PIR timeout cycle turns it off
 intermittent and not yet reproducible. If you experience this, simply wait for the normal presence
 timeout to turn off the screen.
 
+### External Wakeup Hook (optional)
+
+In some setups, a system service may force the display on at boot — for example, a Wayland
+compositor mode toggle to work around a firmware bug. When this happens behind the module's back,
+the screen is on but the module's internal state still says "off, no presence" — the timer bar
+stays red and does not count down until the next real presence event.
+
+To resync state in such cases, the module can listen on a local Unix socket and treat any
+incoming ping as a presence event (same effect as a touch/click).
+
+**Enable in your config:**
+
+```js
+treatExternalWakeupAsPresence: true
+```
+
+**Trigger from your script (e.g. a systemd `ExecStart`) by calling the bundled helper:**
+
+```bash
+~/MagicMirror/modules/MMM-PresenceScreenControl/wakeup.sh
+```
+
+The helper finds the socket itself; you do not configure path names. The socket lives in
+`$XDG_RUNTIME_DIR` (typically `/run/user/<uid>/`), with a fallback to `/tmp`. The default value
+of `treatExternalWakeupAsPresence` is `false`, so existing installations are not affected.
+
 ### Cross-Platform Design
 
 This module supports both X11 and Wayland through configurable commands:
