@@ -506,6 +506,43 @@ Simply change these config parameters — no code changes needed.
 
 ---
 
+## Notification API
+
+MMM-PresenceScreenControl integrates with other MagicMirror² modules via standard
+notifications, so you can wire it into broader automations (room sensors, voice
+assistants, smart-home bridges, …) without writing custom IPC.
+
+### Outgoing — emitted by this module
+
+| Notification | Payload | Fired when |
+|--------------|---------|------------|
+| `MMM_PSC-USER_PRESENCE` | `true` / `false` | The combined presence state changes (any sensor or touch) |
+| `MMM_PSC-SCREEN_POWERSTATUS` | `true` / `false` | The physical screen turns on or off |
+
+Both notifications are emitted exactly on state transitions — no spam on every poll.
+
+### Incoming — consumed by this module
+
+| Notification | Effect |
+|--------------|--------|
+| `MMM_PSC-WAKEUP` | Same as a touch: turns the screen on and resets the presence timer |
+| `MMM_PSC-END` | Forces the screen off immediately (counter and dim state are cleared) |
+| `MMM_PSC-LOCK` | Freezes presence handling — sensor events are tracked internally but no longer change screen state |
+| `MMM_PSC-UNLOCK` | Resumes normal presence handling and re-evaluates the current sensor state |
+
+Example: another module can wake the mirror when a doorbell event arrives:
+
+```js
+this.sendNotification("MMM_PSC-WAKEUP");
+```
+
+`LOCK` / `UNLOCK` are useful when an external system temporarily owns the display
+(e.g. a video stream during a call). `END` is the clean way to force-off the screen
+from outside without touching `offCommand` directly — the module's internal state
+stays consistent.
+
+---
+
 ## GPIO on Modern Systems (Raspberry Pi 5, Debian Trixie)
 
 MMM-PresenceScreenControl uses `gpiomon` from `gpiod` for PIR edge detection.

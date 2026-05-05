@@ -8,6 +8,7 @@
  * License: MIT
  *
  * Modified: 2026-05-05 - Add ecoMode (hide modules while screen is off, opt-in)
+ * Modified: 2026-05-05 - Add notification API: emit MMM_PSC-USER_PRESENCE / MMM_PSC-SCREEN_POWERSTATUS, accept MMM_PSC-WAKEUP/LOCK/UNLOCK/END
  */
 
 const ECO_LOCK = "MMM-PSC_ECO_LOCK";
@@ -70,6 +71,7 @@ Module.register("MMM-PresenceScreenControl", {
     this.alwaysOnLeft = null;
     this.hasAlwaysOnJumped = false;
     this.lastScreenOn = null;
+    this.lastPresenceState = null;
     this.sendSocketNotification("CONFIG", this.config);
     this.log("Module started with config: " + JSON.stringify(this.config), "simple");
     this.updateDom();
@@ -130,16 +132,27 @@ Module.register("MMM-PresenceScreenControl", {
         }
         this.lastDimmedState = this.dimmed;
       }
-      if (this.config.ecoMode && typeof payload.screenOn === "boolean") {
+      if (typeof payload.screenOn === "boolean") {
         if (this.lastScreenOn === null) {
           this.lastScreenOn = payload.screenOn;
         } else if (this.lastScreenOn !== payload.screenOn) {
           this.lastScreenOn = payload.screenOn;
-          if (payload.screenOn) {
-            this.ecoShowAll();
-          } else {
-            this.ecoHideAll();
+          this.sendNotification("MMM_PSC-SCREEN_POWERSTATUS", payload.screenOn);
+          if (this.config.ecoMode) {
+            if (payload.screenOn) {
+              this.ecoShowAll();
+            } else {
+              this.ecoHideAll();
+            }
           }
+        }
+      }
+      if (typeof payload.presence === "boolean") {
+        if (this.lastPresenceState === null) {
+          this.lastPresenceState = payload.presence;
+        } else if (this.lastPresenceState !== payload.presence) {
+          this.lastPresenceState = payload.presence;
+          this.sendNotification("MMM_PSC-USER_PRESENCE", payload.presence);
         }
       }
       this.updateDom();
@@ -329,6 +342,14 @@ Module.register("MMM-PresenceScreenControl", {
       window.addEventListener("click", function(e) {
         self.sendSocketNotification("TOUCH_EVENT", { type: "click" });
       }, false);
+    } else if (notification === "MMM_PSC-WAKEUP") {
+      this.sendSocketNotification("EXT_WAKEUP");
+    } else if (notification === "MMM_PSC-END") {
+      this.sendSocketNotification("EXT_END");
+    } else if (notification === "MMM_PSC-LOCK") {
+      this.sendSocketNotification("EXT_LOCK");
+    } else if (notification === "MMM_PSC-UNLOCK") {
+      this.sendSocketNotification("EXT_UNLOCK");
     }
   }
 });

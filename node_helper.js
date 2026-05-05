@@ -8,6 +8,7 @@
  * License: MIT
  *
  * Modified: 2026-05-05 - Emit screenOn in PRESENCE_UPDATE; trigger update on screen state change (ecoMode support)
+ * Modified: 2026-05-05 - Add notification API: WAKEUP/LOCK/UNLOCK/END inputs, presence lock state
  */
 
 
@@ -43,6 +44,7 @@ module.exports = NodeHelper.create({
     this.screenOn = null;
     this.wakeupServer = null;
     this.wakeupSocketPath = null;
+    this.locked = false;
   },
 
   stop: function () {
@@ -109,7 +111,34 @@ module.exports = NodeHelper.create({
       }
     } else if (notification === "TOUCH_EVENT") {
       this.handleTouch(payload);
+    } else if (notification === "EXT_WAKEUP") {
+      this.log("External notification: WAKEUP", "simple");
+      this.triggerPresence();
+    } else if (notification === "EXT_END") {
+      this.log("External notification: END (force screen off)", "simple");
+      this.forceScreenOff();
+    } else if (notification === "EXT_LOCK") {
+      this.log("External notification: LOCK", "simple");
+      this.locked = true;
+      this.sendPresenceUpdate();
+    } else if (notification === "EXT_UNLOCK") {
+      this.log("External notification: UNLOCK", "simple");
+      this.locked = false;
+      this.updatePresence();
     }
+  },
+
+  forceScreenOff: function () {
+    this.presence = false;
+    this.touchPresence = false;
+    this.counter = 0;
+    this.dimmed = false;
+    this.updateScreen(false);
+    if (this.timer) {
+      clearInterval(this.timer);
+      this.timer = null;
+    }
+    this.sendPresenceUpdate();
   },
 
   handleTouch: function (payload) {
@@ -252,7 +281,12 @@ module.exports = NodeHelper.create({
       }
       newPresence = sensorPresence || this.touchPresence;
     }
-    this.log(`[updatePresence] pirPresence=${this.pirPresence}, touchPresence=${this.touchPresence}, presence=${this.presence}, newPresence=${newPresence}`, "complex");
+    this.log(`[updatePresence] pirPresence=${this.pirPresence}, touchPresence=${this.touchPresence}, presence=${this.presence}, newPresence=${newPresence}, locked=${this.locked}`, "complex");
+    if (this.locked) {
+      this.log("[updatePresence] locked — state change suppressed", "complex");
+      this.sendPresenceUpdate();
+      return;
+    }
     if (newPresence) {
       this.presence = true;
       this.counter = this.config.counterTimeout;
@@ -418,7 +452,8 @@ module.exports = NodeHelper.create({
       dimmed: this.dimmed,
       alwaysOn: this.alwaysOn,
       ignoreActive: this.ignoreActive,
-      screenOn: this.screenOn
+      screenOn: this.screenOn,
+      locked: this.locked
     };
     if (this.alwaysOn && this.alwaysOnWindow) {
       payload.alwaysOnTotal = this.alwaysOnWindow.total;
