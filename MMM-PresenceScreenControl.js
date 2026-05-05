@@ -6,7 +6,11 @@
  * Author: Dr. Ralf Korell, 2025
  * Based on MMM-Pir (bugsounet/Coernel82) and MMM-MQTTScreenOnOff (olexs)
  * License: MIT
+ *
+ * Modified: 2026-05-05 - Add ecoMode (hide modules while screen is off, opt-in)
  */
+
+const ECO_LOCK = "MMM-PSC_ECO_LOCK";
 
 Module.register("MMM-PresenceScreenControl", {
   /**
@@ -37,7 +41,9 @@ Module.register("MMM-PresenceScreenControl", {
     debug: "off",                          // Debug level: "off", "simple", "complex"
     logFileName: "",                      // Log destination: "" = console.log (pm2 logs), "file.log" = file in module dir
     resetCountdownWidth: false,           // If true, bar jumps to 100% at always-on countdown start
-    treatExternalWakeupAsPresence: false  // If true, listen on a Unix socket and treat external screen-on signals as presence
+    treatExternalWakeupAsPresence: false, // If true, listen on a Unix socket and treat external screen-on signals as presence
+    ecoMode: false,                       // If true, hide all other modules while the screen is off (DOM-level; reduces render load)
+    ecoModeIgnore: []                     // Module names to keep visible in ecoMode (e.g. ["MMM-FRITZ-Box-Callmonitor-py3"])
   },
 
   fadeTimers: [],
@@ -63,6 +69,7 @@ Module.register("MMM-PresenceScreenControl", {
     this.alwaysOnTotal = null;
     this.alwaysOnLeft = null;
     this.hasAlwaysOnJumped = false;
+    this.lastScreenOn = null;
     this.sendSocketNotification("CONFIG", this.config);
     this.log("Module started with config: " + JSON.stringify(this.config), "simple");
     this.updateDom();
@@ -122,6 +129,18 @@ Module.register("MMM-PresenceScreenControl", {
           this.fadeRegionsOpacity(1.0, 600);
         }
         this.lastDimmedState = this.dimmed;
+      }
+      if (this.config.ecoMode && typeof payload.screenOn === "boolean") {
+        if (this.lastScreenOn === null) {
+          this.lastScreenOn = payload.screenOn;
+        } else if (this.lastScreenOn !== payload.screenOn) {
+          this.lastScreenOn = payload.screenOn;
+          if (payload.screenOn) {
+            this.ecoShowAll();
+          } else {
+            this.ecoHideAll();
+          }
+        }
       }
       this.updateDom();
       this.log("Received PRESENCE_UPDATE: " + JSON.stringify(payload), "complex");
@@ -264,6 +283,40 @@ Module.register("MMM-PresenceScreenControl", {
     }
 
     return wrapper;
+  },
+
+  /**
+   * Hide all other modules while the screen is off.
+   * Uses a private lockString so user-initiated hides (e.g. via MMM-Remote-Control)
+   * are respected and not overridden.
+   */
+  ecoHideAll: function () {
+    var self = this;
+    MM.getModules().enumerate(function (m) {
+      if (m.name === self.name) return;
+      if (self.config.ecoModeIgnore.indexOf(m.name) !== -1) return;
+      m.hide(0, function () {}, { lockString: ECO_LOCK });
+    });
+    this.log("ecoMode: hide all modules", "simple");
+  },
+
+  /**
+   * Show all other modules when the screen turns on.
+   * Releases only our own lockString — modules locked by other components
+   * remain hidden (LOCK_STRING_ACTIVE on onError, logged at complex level).
+   */
+  ecoShowAll: function () {
+    var self = this;
+    MM.getModules().enumerate(function (m) {
+      if (m.name === self.name) return;
+      m.show(0, function () {}, {
+        lockString: ECO_LOCK,
+        onError: function (err) {
+          self.log("ecoMode: show blocked for " + m.name + " — " + err, "complex");
+        }
+      });
+    });
+    this.log("ecoMode: show all modules", "simple");
   },
 
   /**

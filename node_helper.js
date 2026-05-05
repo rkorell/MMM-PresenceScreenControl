@@ -6,6 +6,8 @@
  * Author: Dr. Ralf Korell, 2025
  * Integrates logic and ideas from MMM-Pir (bugsounet/Coernel82) and MMM-MQTTScreenOnOff (olexs)
  * License: MIT
+ *
+ * Modified: 2026-05-05 - Emit screenOn in PRESENCE_UPDATE; trigger update on screen state change (ecoMode support)
  */
 
 
@@ -393,6 +395,7 @@ module.exports = NodeHelper.create({
   updateScreen: function (on) {
     if (on === this.screenOn) return;
     this.screenOn = on;
+    this.sendPresenceUpdate();
     let cmd = on ? this.config.onCommand : this.config.offCommand;
     this.log(`[updateScreen] on=${on}, cmd="${cmd}"`, "simple");
     if (cmd) {
@@ -414,7 +417,8 @@ module.exports = NodeHelper.create({
       counter: this.counter,
       dimmed: this.dimmed,
       alwaysOn: this.alwaysOn,
-      ignoreActive: this.ignoreActive
+      ignoreActive: this.ignoreActive,
+      screenOn: this.screenOn
     };
     if (this.alwaysOn && this.alwaysOnWindow) {
       payload.alwaysOnTotal = this.alwaysOnWindow.total;

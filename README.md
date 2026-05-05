@@ -265,6 +265,15 @@ Here’s a breakdown of all the available options, with tips and friendly advice
       onCommand: "wlopm --on HDMI-A-1"
       offCommand: "wlopm --off HDMI-A-1"
 
+      # For monitors that show a "no signal" splash when the video output is cut
+      # (which "breaks immersion"): use ddcutil to send the DDC/CI power command
+      # — equivalent to pressing the monitor's hardware power button.
+      # --skip-ddc-checks is needed because some monitors stop responding to DDC
+      # queries when powered off, but still process incoming power-on commands.
+      # Install: sudo apt install ddcutil
+      onCommand: "ddcutil setvcp D6 1 --skip-ddc-checks"
+      offCommand: "ddcutil setvcp D6 5 --skip-ddc-checks"
+
 ```
 
 - **counterTimeout**
@@ -326,6 +335,37 @@ Here’s a breakdown of all the available options, with tips and friendly advice
 - **resetCountdownWidth**
   If `true`, the always-on bar jumps to 100% width at the start of the final countdown.
   If `false`, the bar continues smoothly from wherever it is – no sudden jumps.
+
+- **ecoMode**
+  Set to `true` to additionally hide all other modules (DOM-level) while the screen is off,
+  and show them again when the screen turns on. Default: `false` (opt-in).
+
+  **Why:** Even with the display physically off, Electron keeps rendering hidden DOM
+  (e.g. Newsfeed cross-fades every 20s, animated weather icons). On low-end hosts (Pi 3,
+  X11) those repaints cause measurable CPU spikes. `ecoMode` adds the standard MagicMirror
+  `.hidden` class to every other module via `module.hide()` — the browser then skips
+  layout, paint and composite for those subtrees.
+
+  **What it does NOT do:** It does not stop background work in other modules. Internal
+  `setInterval`/`setTimeout` and network connections (MQTT, WebSockets, polling) keep
+  running, so live data is up to date the moment the screen comes back on. Only render
+  load is reduced.
+
+  Module-initiated hides from other components (e.g. MMM-Remote-Control) are respected:
+  `ecoMode` uses its own private lockString and never overrides foreign hides.
+
+- **ecoModeIgnore**
+  Array of module names that should remain visible while the screen is off, even with
+  `ecoMode: true`. Useful for modules that should be visible the moment the screen
+  wakes up by some external event (e.g. an incoming call lighting up the mirror).
+
+  Example:
+  ```
+  ecoMode: true,
+  ecoModeIgnore: ["MMM-FRITZ-Box-Callmonitor-py3", "clock"]
+  ```
+
+  Note: match against `module.name` (the npm/folder name), not the position alias.
 
 
 
