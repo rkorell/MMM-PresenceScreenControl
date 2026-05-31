@@ -238,28 +238,52 @@ module.exports = NodeHelper.create({
       });
     });
     this.mqttClient.on("message", (topic, message) => {
-      try {
-        let payload = JSON.parse(message.toString());
-        let field = this.config.mqttPayloadOccupancyField || "presence";
-        let occ = payload[field];
-        let presence = (typeof occ === "boolean") ? occ : (occ === "1" || occ === 1 || occ === "true");
-        this.mqttPresence = presence;
-        // RKORELL: Touch-Mechanismus nullen wenn echte Präsenz erkannt
-        if (presence) {
-          this.touchPresence = false;
-          if (this.touchTimer) {
-            clearTimeout(this.touchTimer);
-            this.touchTimer = null;
-          }
+      const raw = message.toString();
+      const bareMode = !!this.config.mqttPayloadOn;
+      let presence;
+
+      if (bareMode) {
+        if (this.config.mqttPayloadOccupancyField && this.config.mqttPayloadOccupancyField !== "presence") {
+          this.log("[MQTT] mqttPayloadOccupancyField is ignored in bare-string mode", "simple");
         }
-        this.updatePresence();
-      } catch (e) {
-        this.log("MQTT payload parse error: " + e, "simple");
+        presence = (raw.trim() === this.config.mqttPayloadOn);
+      } else {
+        let payload;
+        try {
+          payload = JSON.parse(raw);
+        } catch (e) {
+          this.log("[MQTT] Field mode JSON parse error: " + e + " — payload: " + raw, "simple");
+          return;
+        }
+        const field = this.config.mqttPayloadOccupancyField || "presence";
+        presence = this.coercePresence(payload && payload[field]);
       }
+
+      this.log(`[MQTT] received (${bareMode ? "bare" : "field"} mode): mqttPresence=${presence}`, "simple");
+      this.mqttPresence = presence;
+      // RKORELL: Touch-Mechanismus nullen wenn echte Präsenz erkannt
+      if (presence) {
+        this.touchPresence = false;
+        if (this.touchTimer) {
+          clearTimeout(this.touchTimer);
+          this.touchTimer = null;
+        }
+      }
+      this.updatePresence();
     });
     this.mqttClient.on("error", (err) => {
       this.log("MQTT connection error: " + err, "simple");
     });
+  },
+
+  coercePresence: function (v) {
+    if (typeof v === "boolean") return v;
+    if (typeof v === "number") return v !== 0;
+    if (typeof v === "string") {
+      const s = v.toLowerCase().trim();
+      return s === "true" || s === "1" || s === "on" || s === "yes";
+    }
+    return false;
   },
 
   // PRÄMISSENTREU: State-Decision je nach Mode
@@ -281,7 +305,7 @@ module.exports = NodeHelper.create({
       }
       newPresence = sensorPresence || this.touchPresence;
     }
-    this.log(`[updatePresence] pirPresence=${this.pirPresence}, touchPresence=${this.touchPresence}, presence=${this.presence}, newPresence=${newPresence}, locked=${this.locked}`, "complex");
+    this.log(`[updatePresence] pirPresence=${this.pirPresence}, mqttPresence=${this.mqttPresence}, touchPresence=${this.touchPresence}, presence=${this.presence}, newPresence=${newPresence}, locked=${this.locked}`, "complex");
     if (this.locked) {
       this.log("[updatePresence] locked — state change suppressed", "complex");
       this.sendPresenceUpdate();

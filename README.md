@@ -206,8 +206,31 @@ Here’s a breakdown of all the available options, with tips and friendly advice
   MQTT topic to listen for presence messages.
 
 - **mqttPayloadOccupancyField**
-  Which field in the MQTT JSON payload contains the occupancy boolean.
-  (For simple MQTT sensors, this is often just `"presence"`, containing "true" or "false".)
+  Which field in the MQTT JSON payload contains the occupancy value.
+  Default: `"presence"`. The module expects the payload to be a JSON object
+  and reads the named field.
+
+  **Accepted truthy values** (case-insensitive after trim):
+  - Boolean `true`
+  - Number ≠ 0
+  - Strings `"true"`, `"1"`, `"on"`, `"yes"`
+
+  Everything else (including `null`, other strings, missing field) is
+  treated as no presence.
+
+  *Ignored when `mqttPayloadOn` is set (see below).*
+
+- **mqttPayloadOn**
+  Alternative to `mqttPayloadOccupancyField`. When set (non-empty), the
+  module switches to **bare-string mode**: the raw MQTT message is compared
+  exactly to this string (case-sensitive). Match → presence detected.
+  Anything else → no presence.
+
+  Useful for HomeAssistant default MQTT binary sensors, which publish bare
+  values like `"ON"` / `"OFF"` directly without wrapping them in a JSON
+  object.
+
+  Default: empty (= field mode active).
 
 - **mqttUser**
   Username for MQTT broker authentication. Leave empty (`""`) for brokers without authentication.
@@ -386,7 +409,7 @@ Here’s a breakdown of all the available options, with tips and friendly advice
   }
 }
 
-// Minimal config for MQTT only:
+// Minimal config for MQTT only (JSON object payload like {"presence": true}):
 {
   module: "MMM-PresenceScreenControl",
   position: "bottom_bar",
@@ -397,6 +420,20 @@ Here’s a breakdown of all the available options, with tips and friendly advice
     mqttPayloadOccupancyField: "presence",
     onCommand: "xset dpms force on",
     offCommand: "xset dpms force off"
+  }
+}
+
+// HomeAssistant default MQTT binary_sensor (bare "ON" / "OFF"):
+{
+  module: "MMM-PresenceScreenControl",
+  position: "bottom_bar",
+  config: {
+    mode: "MQTT",
+    mqttServer: "mqtt://homeassistant.local:1883",
+    mqttTopic: "binary_sensor/presence/state",
+    mqttPayloadOn: "ON",
+    onCommand: "wlopm --on HDMI-A-1",
+    offCommand: "wlopm --off HDMI-A-1"
   }
 }
 

@@ -23,7 +23,8 @@ Module.register("MMM-PresenceScreenControl", {
     pirGPIO: 4,                           // GPIO pin (BCM numbering) for PIR sensor
     mqttServer: "mqtt://localhost:1883",  // MQTT broker URL
     mqttTopic: "sensor/presence",         // MQTT topic for presence messages
-    mqttPayloadOccupancyField: "presence",// Field in MQTT payload indicating presence
+    mqttPayloadOccupancyField: "presence",// Field in MQTT JSON payload indicating presence (ignored if mqttPayloadOn is set)
+    mqttPayloadOn: "",                     // If set, switches to bare-string mode: raw MQTT message must equal this string for presence=true
     mqttUser: "",                          // MQTT broker username (optional)
     mqttPassword: "",                      // MQTT broker password (optional)
     onCommand: "vcgencmd display_power 1",// Command to turn the display ON
