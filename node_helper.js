@@ -259,7 +259,7 @@ module.exports = NodeHelper.create({
         presence = this.coercePresence(payload && payload[field]);
       }
 
-      this.log(`[MQTT] received (${bareMode ? "bare" : "field"} mode): mqttPresence=${presence}`, "simple");
+      this.log(`[MQTT] received (${bareMode ? "bare" : "field"} mode): mqttPresence=${presence}`, "complex");
       this.mqttPresence = presence;
       // RKORELL: Touch-Mechanismus nullen wenn echte Präsenz erkannt
       if (presence) {
