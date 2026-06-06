@@ -304,11 +304,17 @@ Here’s a breakdown of all the available options, with tips and friendly advice
   How long (in seconds) the display stays ON after the last presence event (from either sensor).
 
 - **startupGracePeriod**
-  How long (in seconds) the screen stays on after module startup before the presence logic kicks in.
+  How long (in seconds) the screen stays on after module startup. The grace period is the visible
+  startup window — nothing more, nothing less.
     - `0` (default) – screen turns off after ~1 second if nobody is detected
-    - `30` – screen stays on for 30 seconds after startup, then turns off if nobody is present
-  Useful for verifying that a restart completed successfully. During the grace period, sensor
-  events work normally — if the PIR detects someone, the timer switches to `counterTimeout`.
+    - `30` – screen stays on and fully visible for 30 seconds after startup, then turns off
+      unless a sensor reports presence in the meantime
+  Implemented as a synthetic always-on window: during the grace the screen is forced ON, no
+  dimming occurs, and the presence bar shows the grace countdown in `colorCronActivation`
+  (same visual as `cronAlwaysOnWindows`). May exceed `counterTimeout`. **At the end of the
+  grace the screen turns off** (the grace replaces the regular `counterTimeout` for the startup
+  phase). If a PIR / MQTT sensor reports presence during the grace, normal `counterTimeout`
+  logic takes over at grace end as usual.
 
 - **autoDimmer**
   Set to `true` to dim the screen after `autoDimmerTimeout` seconds

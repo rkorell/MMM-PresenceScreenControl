@@ -10,6 +10,9 @@
  * Modified: 2026-05-05 - Emit screenOn in PRESENCE_UPDATE; trigger update on screen state change (ecoMode support)
  * Modified: 2026-05-05 - Add notification API: WAKEUP/LOCK/UNLOCK/END inputs, presence lock state
  * Modified: 2026-06-06 - Validate autoDimmerOpacity range, warn on startupGracePeriod > counterTimeout
+ * Modified: 2026-06-06 - Implement startupGracePeriod as synthetic alwaysOnWindow (fixes #6)
+ * Modified: 2026-06-06 - Stop overwriting this.counter while alwaysOn is active (fixes #6 phantom-green-bar)
+ * Modified: 2026-06-06 - Seed startup grace before sensor start; suppress counter-loop restart when no countdown remains
  */
 
 
@@ -46,6 +49,7 @@ module.exports = NodeHelper.create({
     this.wakeupServer = null;
     this.wakeupSocketPath = null;
     this.locked = false;
+    this.startupGraceExpiry = null;
   },
 
   stop: function () {
@@ -97,10 +101,21 @@ module.exports = NodeHelper.create({
         console.log(`PresenceControl: autoDimmerOpacity ${original} out of range [0,1], clamped to ${clamped}`);
         this.config.autoDimmerOpacity = clamped;
       }
-      if (this.config.startupGracePeriod > this.config.counterTimeout) {
-        console.log(`PresenceControl: startupGracePeriod (${this.config.startupGracePeriod}s) exceeds counterTimeout (${this.config.counterTimeout}s) - grace behavior with long durations is currently limited (see issue #6)`);
-      }
       this.log("Received config: " + JSON.stringify(this.config), "simple");
+      // Seed startup grace state BEFORE sensor/cron start so async sensor init events
+      // (e.g. PIR initial-state read) see the correct alwaysOn=true and route accordingly.
+      if (this.config.startupGracePeriod > 0) {
+        this.startupGraceExpiry = Date.now() + this.config.startupGracePeriod * 1000;
+        this.alwaysOn = true;
+        this.alwaysOnWindow = {
+          from: "startup",
+          to: "startup",
+          total: this.config.startupGracePeriod,
+          left: this.config.startupGracePeriod
+        };
+        this.prevAlwaysOn = true;
+        this.log(`[startupGrace] active (${this.config.startupGracePeriod}s)`, "complex");
+      }
       if (this.config.mode === "PIR" || this.config.mode === "PIR_MQTT") {
         this.startPirSensor();
       }
@@ -111,15 +126,7 @@ module.exports = NodeHelper.create({
       if (this.config.treatExternalWakeupAsPresence) {
         this.startWakeupListener();
       }
-      if (this.config.startupGracePeriod > 0) {
-        this.presence = false;
-        this.counter = this.config.startupGracePeriod;
-        this.updateScreen(true);
-        this.startCounter();
-        this.sendPresenceUpdate();
-      } else {
-        this.updatePresence();
-      }
+      this.updatePresence();
     } else if (notification === "TOUCH_EVENT") {
       this.handleTouch(payload);
     } else if (notification === "EXT_WAKEUP") {
@@ -299,13 +306,30 @@ module.exports = NodeHelper.create({
 
   // PRÄMISSENTREU: State-Decision je nach Mode
   updatePresence: function () {
-    let newPresence = false;
+    this.log(`[updatePresence] pirPresence=${this.pirPresence}, mqttPresence=${this.mqttPresence}, touchPresence=${this.touchPresence}, alwaysOn=${this.alwaysOn}, ignoreActive=${this.ignoreActive}, presence=${this.presence}, locked=${this.locked}`, "complex");
+
+    if (this.locked) {
+      this.log("[updatePresence] locked — state change suppressed", "complex");
+      this.sendPresenceUpdate();
+      return;
+    }
+
+    // alwaysOn (startup grace OR cronAlwaysOnWindow): display ON, no dim, counter untouched.
+    // Counter must keep its pre-alwaysOn value so it can resume cleanly when alwaysOn ends.
     if (this.alwaysOn) {
-      newPresence = true;
-    } else if (this.ignoreActive) {
+      this.presence = true;
+      this.dimmed = false;
+      this.updateScreen(true);
+      this.startCounter();
+      this.sendPresenceUpdate();
+      return;
+    }
+
+    // RKORELL: Sensor-Presence je nach Mode, plus touchPresence (unabhängig vom Mode)
+    let newPresence = false;
+    if (this.ignoreActive) {
       newPresence = false;
     } else {
-      // RKORELL: Sensor-Presence je nach Mode, plus touchPresence (unabhängig vom Mode)
       let sensorPresence = false;
       if (this.config.mode === "PIR_MQTT") {
         sensorPresence = (this.pirPresence || this.mqttPresence);
@@ -316,12 +340,7 @@ module.exports = NodeHelper.create({
       }
       newPresence = sensorPresence || this.touchPresence;
     }
-    this.log(`[updatePresence] pirPresence=${this.pirPresence}, mqttPresence=${this.mqttPresence}, touchPresence=${this.touchPresence}, presence=${this.presence}, newPresence=${newPresence}, locked=${this.locked}`, "complex");
-    if (this.locked) {
-      this.log("[updatePresence] locked — state change suppressed", "complex");
-      this.sendPresenceUpdate();
-      return;
-    }
+
     if (newPresence) {
       this.presence = true;
       this.counter = this.config.counterTimeout;
@@ -330,7 +349,12 @@ module.exports = NodeHelper.create({
       this.startCounter();
     } else {
       this.presence = false;
-      this.startCounter();
+      // Only (re)start the counter loop if something remains to count down.
+      // After expiry timer is null and counter is 0 — avoid spamming "Counter expired"
+      // each time updatePresence is invoked by sensor keepalives (e.g. periodic MQTT).
+      if (this.timer || this.counter > 0) {
+        this.startCounter();
+      }
     }
     this.sendPresenceUpdate();
   },
@@ -362,6 +386,19 @@ module.exports = NodeHelper.create({
   },
 
   getActiveAlwaysOnWindow: function (now) {
+    if (this.startupGraceExpiry) {
+      const leftMs = this.startupGraceExpiry - now.getTime();
+      if (leftMs > 0) {
+        return {
+          from: "startup",
+          to: "startup",
+          total: this.config.startupGracePeriod,
+          left: Math.ceil(leftMs / 1000)
+        };
+      }
+      this.startupGraceExpiry = null;
+      this.log("[startupGrace] expired, normal logic active", "complex");
+    }
     if (!this.config.cronAlwaysOnWindows || !Array.isArray(this.config.cronAlwaysOnWindows)) return null;
     const nowMinutes = now.getHours() * 60 + now.getMinutes();
     const nowDay = now.getDay();
@@ -447,6 +484,7 @@ module.exports = NodeHelper.create({
           this.log(`[startCounter] Counter expired: presence=${this.presence}, pirPresence=${this.pirPresence}, calling updateScreen(false)`, "simple");
           this.updateScreen(false);
           clearInterval(this.timer);
+          this.timer = null;
           this.counter = 0;
           this.dimmed = false;
           this.log("Counter expired, set presence to FALSE and stopped timer.", "complex");
