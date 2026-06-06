@@ -162,6 +162,7 @@ All configuration is done via module parameters.
     startupGracePeriod: 0,
     autoDimmer: true,
     autoDimmerTimeout: 60,
+    autoDimmerOpacity: 0.2,
     cronIgnoreWindows: [
       { from: "23:00", to: "05:00", days: [1,2,3,4,5] },
       { from: "01:00", to: "05:00", days: [0,6] }
@@ -316,6 +317,10 @@ Here’s a breakdown of all the available options, with tips and friendly advice
 - **autoDimmerTimeout**
   How long (in seconds) before the auto-dimmer kicks in.
   Must be less than `counterTimeout` — if set too high, it is automatically clamped.
+
+- **autoDimmerOpacity**
+  Target opacity during auto-dim. Range `0.0` (fully transparent) to `1.0` (no dim).
+  Default `0.2`. Out-of-range values are clamped and logged.
 
 - **cronIgnoreWindows**
   An object-array of time-windows: {from: "HH:MM", to: "HH:MM", days: [weekday_numbers]}

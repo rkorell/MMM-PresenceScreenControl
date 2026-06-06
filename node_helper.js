@@ -9,6 +9,7 @@
  *
  * Modified: 2026-05-05 - Emit screenOn in PRESENCE_UPDATE; trigger update on screen state change (ecoMode support)
  * Modified: 2026-05-05 - Add notification API: WAKEUP/LOCK/UNLOCK/END inputs, presence lock state
+ * Modified: 2026-06-06 - Validate autoDimmerOpacity range, warn on startupGracePeriod > counterTimeout
  */
 
 
@@ -88,6 +89,16 @@ module.exports = NodeHelper.create({
       if (this.config.autoDimmer && this.config.autoDimmerTimeout >= this.config.counterTimeout) {
         this.config.autoDimmerTimeout = Math.max(0, this.config.counterTimeout - 1);
         console.log(`PresenceControl: autoDimmerTimeout clamped to ${this.config.autoDimmerTimeout} (must be less than counterTimeout ${this.config.counterTimeout})`);
+      }
+      if (typeof this.config.autoDimmerOpacity !== "number" ||
+          this.config.autoDimmerOpacity < 0 || this.config.autoDimmerOpacity > 1) {
+        const original = this.config.autoDimmerOpacity;
+        const clamped = Math.min(1, Math.max(0, Number(original) || 0.2));
+        console.log(`PresenceControl: autoDimmerOpacity ${original} out of range [0,1], clamped to ${clamped}`);
+        this.config.autoDimmerOpacity = clamped;
+      }
+      if (this.config.startupGracePeriod > this.config.counterTimeout) {
+        console.log(`PresenceControl: startupGracePeriod (${this.config.startupGracePeriod}s) exceeds counterTimeout (${this.config.counterTimeout}s) - grace behavior with long durations is currently limited (see issue #6)`);
       }
       this.log("Received config: " + JSON.stringify(this.config), "simple");
       if (this.config.mode === "PIR" || this.config.mode === "PIR_MQTT") {

@@ -9,6 +9,7 @@
  *
  * Modified: 2026-05-05 - Add ecoMode (hide modules while screen is off, opt-in)
  * Modified: 2026-05-05 - Add notification API: emit MMM_PSC-USER_PRESENCE / MMM_PSC-SCREEN_POWERSTATUS, accept MMM_PSC-WAKEUP/LOCK/UNLOCK/END
+ * Modified: 2026-06-06 - Add autoDimmerOpacity config option (closes issue #7)
  */
 
 const ECO_LOCK = "MMM-PSC_ECO_LOCK";
@@ -33,6 +34,7 @@ Module.register("MMM-PresenceScreenControl", {
     startupGracePeriod: 0,               // Seconds to keep screen on after startup (0 = off after ~1s if nobody present)
     autoDimmer: true,                     // Enable/disable auto-dimming instead of instant off
     autoDimmerTimeout: 60,                // Seconds before auto-dimming triggers
+    autoDimmerOpacity: 0.2,               // Target opacity during auto-dim (0.0 = invisible, 1.0 = full)
     cronIgnoreWindows: [],                // Time windows to ignore all presence
     cronAlwaysOnWindows: [],              // Time windows to keep display always on
     style: 2,                             // Display style: 2 = bar, 0 = no graphic
@@ -127,7 +129,7 @@ Module.register("MMM-PresenceScreenControl", {
       this.alwaysOnLeft = payload.alwaysOnLeft;
       if (this.lastDimmedState !== this.dimmed) {
         if (this.dimmed) {
-          this.fadeRegionsOpacity(0.2, this.config.autoDimmerTimeout * 1000);
+          this.fadeRegionsOpacity(this.config.autoDimmerOpacity, this.config.autoDimmerTimeout * 1000);
         } else {
           this.fadeRegionsOpacity(1.0, 600);
         }
