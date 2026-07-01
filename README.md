@@ -136,6 +136,8 @@ sudo apt install gpiod
 
 If `gpiomon` is unavailable on your system, the module falls back automatically to Python/gpiozero (`MotionSensor.py`).
 
+The GPIO line is monitored with an internal **pull-down** bias, so active-high PIR sensors whose output is high-impedance at rest (e.g. Panasonic PaPIR) read a defined LOW when there is no motion. This means no external pull-down resistor is required. (Applies to the `gpiomon` path on libgpiod 2.x.)
+
 ---
 
 ## Configuration
@@ -643,6 +645,20 @@ MIT License.
 ---
 
 ## Changelog
+
+### v1.5.1 (01.07.2026)
+
+**PIR pull-down bias fix**
+
+- Fixed: The `gpiomon` path (libgpiod 2.x) now enables the GPIO's internal **pull-down** bias
+  when monitoring the PIR line (and when reading its initial state). Active-high PIR sensors whose
+  output is high-impedance at rest (e.g. Panasonic PaPIR EKMB) previously let the line float HIGH,
+  which was reported as permanent presence (screen stuck on). The pull-down gives a defined LOW at
+  rest, matching the gpiozero fallback path (which already set it). No external pull-down resistor
+  is required, and push-pull sensors are unaffected.
+  Reported by [@jhw2850](https://github.com/jhw2850) (#8).
+
+---
 
 ### v1.5.0 (09.03.2026)
 

@@ -10,6 +10,8 @@
  * Mode 1: Python/gpiozero fallback (MotionSensor.py)
  *
  * License: MIT
+ *
+ * Modified: 2026-07-01 19:51 - Set internal pull-down bias for gpiomon/gpioget (libgpiod 2.x) so high-impedance active-high PIR sensors (e.g. Panasonic PaPIR) read a defined LOW at rest (refs #8)
  */
 
 var log = () => { /* do nothing */ };
@@ -232,17 +234,26 @@ class PIR {
       const debounceMs = Number.isFinite(debounceValue) && debounceValue >= 0
         ? Math.round(debounceValue)
         : 200;
-      args = ["-c", chip, "-p", `${debounceMs}ms`, pin];
-      console.log(`[PIR] [GPIOMON] Starting gpiomon (libgpiod 2.x) on ${chip} line ${pin} (debounce ${debounceMs}ms)`);
+      // The module treats a HIGH line as motion. Some PIR sensors (e.g. Panasonic
+      // PaPIR) leave their output high-impedance at rest instead of driving it low,
+      // which lets the line float HIGH and report permanent presence. Enable the GPIO's
+      // internal pull-down so the line reads a defined LOW when there is no motion.
+      // "pull-down" is the value gpiomon expects for -b (alternatives: pull-up, disabled).
+      args = ["-c", chip, "-p", `${debounceMs}ms`, "-b", "pull-down", pin];
+      console.log(`[PIR] [GPIOMON] Starting gpiomon (libgpiod 2.x) on ${chip} line ${pin} (debounce ${debounceMs}ms, bias pull-down)`);
     } else {
       // libgpiod 1.x: gpiomon <chip> <line>  (no -c flag, no debounce flag)
+      // Note: 1.x uses a different bias-flag syntax; left unset until verified on real
+      // 1.x hardware. If the line floats, the gpiozero fallback (which sets pull-down) applies.
       args = [chip, pin];
       console.log(`[PIR] [GPIOMON] Starting gpiomon (libgpiod 1.x) on ${chip} line ${pin}`);
     }
     // Check initial GPIO state before starting edge monitor (Issue #4)
     try {
+      // Read the initial state with the same pull-down bias we monitor with (see above),
+      // otherwise gpioget would read the default pull-up and report a false initial HIGH.
       const getArgs = version >= 2
-        ? ["-c", chip, "--numeric", pin]
+        ? ["-c", chip, "-b", "pull-down", "--numeric", pin]
         : [chip, pin];
       const result = spawnSync("gpioget", getArgs, {
         encoding: "utf8",
