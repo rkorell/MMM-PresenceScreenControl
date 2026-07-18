@@ -43,7 +43,7 @@ Each module had its strengths:
 ## What was simplified and why?
 
 We trimmed the fat:
-- **No more camera or relay support** (if you need that, check the original modules).
+- **No built-in camera or relay driver** (unlike MMM-Pir). A hardware relay can still be switched through your own `onCommand`/`offCommand` — see the examples below.
 - **No obfuscated code or install-time magic** – everything is here, readable, and ready to tweak.
 - **Screen ON/OFF is now just a command:**
   You decide how your screen turns on or off – works for X11, Wayland, Pi, or any system.
@@ -85,7 +85,7 @@ We trimmed the fat:
 
 ### **Limitations**
 - Only “bar” (progress bar) visualization is available – sorry, no circle or semicircle.
-- No support for cameras, relays, or other exotic hardware.
+- No built-in driver for cameras or relays — but a relay can be driven via `onCommand`/`offCommand` (see the command examples).
 - You provide your own screen ON/OFF commands for your system (see below for many examples!).
 - If you enable both PIR and MQTT, presence is triggered by either (logical “OR”).
 
@@ -247,7 +247,7 @@ Here’s a breakdown of all the available options, with tips and friendly advice
   You can use just about anything that works on your system.
   Here are some great examples:
 
-```js
+```text
 
       # For Raspberry Pi (vcgencmd, HDMI on/off) (NOT suitable for bookworm or later):
       onCommand: "vcgencmd display_power 1"
@@ -299,6 +299,23 @@ Here’s a breakdown of all the available options, with tips and friendly advice
       # Install: sudo apt install ddcutil
       onCommand: "ddcutil setvcp D6 1 --skip-ddc-checks"
       offCommand: "ddcutil setvcp D6 5 --skip-ddc-checks"
+
+      # For a physical relay on a GPIO pin (cuts the monitor's backlight power).
+      # Useful when migrating from modules like MMM-Pir that switched a relay
+      # instead of using software commands. No external shell/Python script needed —
+      # the pin is toggled directly via gpioset (part of libgpiod).
+      # Logic is reversed here so the screen is ON at boot/on motion and the relay
+      # cuts power on timeout. Swap =0 and =1 if your relay board is Active High/Low.
+      #
+      # libgpiod 1.x (Bullseye and earlier — gpiofind available):
+      onCommand: "sudo gpioset $(gpiofind GPIO20)=0"   # backlight ON
+      offCommand: "sudo gpioset $(gpiofind GPIO20)=1"  # backlight OFF (relay active)
+      #
+      # libgpiod 2.x (Bookworm/Trixie — gpiofind removed, chip must be named):
+      # Pi 5 uses gpiochip4, most earlier Pis use gpiochip0.
+      onCommand: "sudo gpioset -c gpiochip0 20=0"
+      offCommand: "sudo gpioset -c gpiochip0 20=1"
+      # Thanks to @papinist for this recipe (issue #9).
 
 ```
 
@@ -372,6 +389,16 @@ Here’s a breakdown of all the available options, with tips and friendly advice
   If `true`, the always-on bar jumps to 100% width at the start of the final countdown.
   If `false`, the bar continues smoothly from wherever it is – no sudden jumps.
 
+- **style**
+  Visualization style for the presence timer bar.
+    - `2` (default) – progress bar
+    - `0` – no graphics (screen control only, no bar)
+
+- **treatExternalWakeupAsPresence**
+  Default `false`. When `true`, the module listens on a local Unix socket and treats an
+  incoming ping as a presence event. Useful when a system service powers the display on
+  behind the module's back. See "External Wakeup Hook" below for details.
+
 - **ecoMode**
   Set to `true` to additionally hide all other modules (DOM-level) while the screen is off,
   and show them again when the screen turns on. Default: `false` (opt-in).
@@ -417,8 +444,8 @@ Here’s a breakdown of all the available options, with tips and friendly advice
   config: {
     mode: "PIR",
     pirGPIO: 4,
-    onCommand: "vcgencmd display_power 1",
-    offCommand: "vcgencmd display_power 0"
+    onCommand: "wlopm --on HDMI-A-1",
+    offCommand: "wlopm --off HDMI-A-1"
   }
 }
 
@@ -646,17 +673,36 @@ MIT License.
 
 ## Changelog
 
-### v1.5.1 (01.07.2026)
+### v1.5.1 (18.07.2026)
 
-**PIR pull-down bias fix**
+**New features**
 
-- Fixed: The `gpiomon` path (libgpiod 2.x) now enables the GPIO's internal **pull-down** bias
+- `ecoMode` / `ecoModeIgnore`: optionally hide all other modules (DOM-level) while the screen is
+  off to cut render load on low-end hosts, and show them again when it turns back on. Opt-in,
+  respects foreign hides from other modules.
+- Notification API for cross-module integration. Outgoing: `MMM_PSC-USER_PRESENCE`,
+  `MMM_PSC-SCREEN_POWERSTATUS`. Incoming: `MMM_PSC-WAKEUP`, `MMM_PSC-END`, `MMM_PSC-LOCK`,
+  `MMM_PSC-UNLOCK`.
+- `treatExternalWakeupAsPresence` + bundled `wakeup.sh`: listen on a local Unix socket and treat
+  an external screen-on signal as a presence event, to resync state when a system service powers
+  the display on behind the module's back.
+- `mqttPayloadOn`: bare-string MQTT mode for HomeAssistant-style `"ON"`/`"OFF"` binary sensors;
+  field mode now coerces payload values more forgivingly (case-insensitive `true`/`1`/`on`/`yes`).
+- `autoDimmerOpacity`: configurable target opacity during auto-dim (default `0.2`, out-of-range
+  values are clamped).
+
+**Fixes**
+
+- The `gpiomon` path (libgpiod 2.x) now enables the GPIO's internal **pull-down** bias
   when monitoring the PIR line (and when reading its initial state). Active-high PIR sensors whose
   output is high-impedance at rest (e.g. Panasonic PaPIR EKMB) previously let the line float HIGH,
   which was reported as permanent presence (screen stuck on). The pull-down gives a defined LOW at
   rest, matching the gpiozero fallback path (which already set it). No external pull-down resistor
   is required, and push-pull sensors are unaffected.
   Reported by [@jhw2850](https://github.com/jhw2850) (#8).
+- Counter is no longer overwritten during always-on windows (refs #6).
+- Read the initial GPIO state via `gpioget` at startup and fire presence immediately if the pin
+  is already HIGH, instead of waiting for the first edge.
 
 ---
 
