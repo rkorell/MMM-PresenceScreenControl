@@ -302,19 +302,19 @@ Here’s a breakdown of all the available options, with tips and friendly advice
 
       # For a physical relay on a GPIO pin (cuts the monitor's backlight power).
       # Useful when migrating from modules like MMM-Pir that switched a relay
-      # instead of using software commands. No external shell/Python script needed —
-      # the pin is toggled directly via gpioset (part of libgpiod).
-      # Logic is reversed here so the screen is ON at boot/on motion and the relay
-      # cuts power on timeout. Swap =0 and =1 if your relay board is Active High/Low.
+      # instead of using software commands. No external shell/Python script needed.
+      # The two commands drive the pin high/low; onCommand holds it until offCommand
+      # flips it back. Swap the values if your relay board is Active High/Low.
       #
-      # libgpiod 1.x (Bullseye and earlier — gpiofind available):
-      onCommand: "sudo gpioset $(gpiofind GPIO20)=0"   # backlight ON
-      offCommand: "sudo gpioset $(gpiofind GPIO20)=1"  # backlight OFF (relay active)
+      # Recommended on Raspberry Pi OS (Bookworm/Trixie): pinctrl.
+      # It writes the pad state directly, so the level persists after the command
+      # exits, and you don't need to know the gpiochip index.
+      onCommand: "sudo pinctrl 20 op dh"   # drive HIGH
+      offCommand: "sudo pinctrl 20 op dl"  # drive LOW
       #
-      # libgpiod 2.x (Bookworm/Trixie — gpiofind removed, chip must be named):
-      # Pi 5 uses gpiochip4, most earlier Pis use gpiochip0.
-      onCommand: "sudo gpioset -c gpiochip0 20=0"
-      offCommand: "sudo gpioset -c gpiochip0 20=1"
+      # Note on gpioset (libgpiod): a one-shot gpioset releases the line the moment
+      # the process exits, so as a fire-and-forget command it only pulses the pin
+      # rather than holding the state. Use pinctrl above, or run gpioset daemonized (-z).
       # Thanks to @papinist for this recipe (issue #9).
 
 ```
