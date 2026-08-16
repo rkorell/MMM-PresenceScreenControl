@@ -5,9 +5,30 @@
   "main": "MMM-PresenceScreenControl.js",
   "author": "Dr. Ralf Korell, 2025. Integration of MMM-Pir (bugsounet/Coernel82) & MMM-MQTTScreenOnOff (olexs)",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/rkorell/MMM-PresenceScreenControl.git"
+  },
+  "keywords": [
+    "magicmirror",
+    "mmm",
+    "magicmirror-module",
+    "pir",
+    "presence",
+    "mqtt",
+    "screen-control",
+    "motion-sensor"
+  ],
+  "scripts": {
+    "lint": "eslint ."
+  },
   "dependencies": {
     "mqtt": "^5.3.5",
     "python-shell": "^5.0.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.0.0",
+    "eslint": "^9.0.0",
+    "globals": "^16.0.0"
   }
 }
-
