@@ -180,7 +180,14 @@ All configuration is done via module parameters.
     showPresenceStatus: true,
     debug: "off",
     logFileName: "",
-    resetCountdownWidth: false
+    resetCountdownWidth: false,
+    homeAssistant: {
+      enabled: false,
+      discovery: true,
+      discoveryPrefix: "homeassistant",
+      objectId: "magicmirror_screen",
+      name: "MagicMirror Screen"
+    }
   }
 },
 
@@ -430,6 +437,23 @@ Here’s a breakdown of all the available options, with tips and friendly advice
 
   Note: match against `module.name` (the npm/folder name), not the position alias.
 
+- **homeAssistant**
+  Optional block that exposes the mirror screen as a native **Home Assistant MQTT switch**
+  via MQTT Discovery — no extra module, no shell scripts. Backend-only; it reuses the same
+  `mqttServer` / `mqttUser` / `mqttPassword` you already configured above, and works in
+  every `mode` (including pure `PIR`) via its own dedicated MQTT connection. Disabled by
+  default (`enabled: false`), so existing setups are unaffected.
+
+  | Sub-option | Default | Meaning |
+  |------------|---------|---------|
+  | `enabled` | `false` | Master switch for the whole HA integration |
+  | `discovery` | `true` | Publish the HA discovery config so the switch entity is auto-created |
+  | `discoveryPrefix` | `"homeassistant"` | Must match your Home Assistant `mqtt` discovery prefix |
+  | `objectId` | `"magicmirror_screen"` | Technical id used for the topic paths and the entity `unique_id`. Make it unique per mirror if several share one broker. |
+  | `name` | `"MagicMirror Screen"` | Friendly name shown in Home Assistant |
+
+  See the dedicated **Home Assistant integration** section below for topics and behaviour.
+
 
 
 ---
@@ -620,6 +644,74 @@ stays consistent.
 
 ---
 
+## Home Assistant integration
+
+The optional `homeAssistant` config block turns the mirror screen into a native
+**Home Assistant MQTT switch** via MQTT Discovery — Home Assistant auto-creates the switch
+entity, with no extra module and no shell scripts required. It is backend-only and reuses
+the module's existing `mqttServer` / `mqttUser` / `mqttPassword`. It runs in every `mode`
+(including pure `PIR`), because it uses its own dedicated MQTT connection.
+
+> This integration was kindly suggested and collaboratively shaped by
+> [@papinist](https://github.com/papinist) in
+> [issue #10](https://github.com/rkorell/MMM-PresenceScreenControl/issues/10) — many thanks
+> for the friendly, well-argued suggestion and the design discussion.
+
+Enable it like this:
+
+```js
+homeAssistant: {
+  enabled: true,
+  discovery: true,
+  discoveryPrefix: "homeassistant",
+  objectId: "magicmirror_screen",
+  name: "MagicMirror Screen"
+}
+```
+
+### Topics
+
+Derived from `objectId`, in a namespace kept separate from your presence sensor topic:
+
+| Purpose | Topic | Direction |
+|---------|-------|-----------|
+| Discovery config (retained) | `<discoveryPrefix>/switch/<objectId>/config` | module → HA |
+| Command | `magicmirror/<objectId>/set` | HA → module (`ON` / `OFF`) |
+| State (retained) | `magicmirror/<objectId>/state` | module → HA (`ON` / `OFF`) |
+| Availability (retained, LWT) | `magicmirror/<objectId>/availability` | module → HA (`online` / `offline`) |
+
+### Behaviour
+
+Home Assistant is treated as **just another presence source** — it never overrides the
+module's own logic (cron windows, timer, dimming):
+
+- **`ON`** acts like a held presence signal: the screen turns on and stays on **as long as
+  the switch is on**.
+- **`OFF`** releases that presence signal; the screen then returns to standby after the
+  normal `counterTimeout`. There is deliberately no separate instant-off command — set a
+  low `counterTimeout` if you want a quick off (note this is global to all presence
+  sources).
+- The **state topic always mirrors the real screen** (`screenOn`), no matter what caused
+  the change — PIR, MQTT sensor, touch, schedule or Home Assistant. If a command is
+  rejected or overridden by a cron window (e.g. `ON` during a `cronIgnoreWindows`, or `OFF`
+  during a `cronAlwaysOnWindows`), the switch snaps back to the real state — it is never
+  left inconsistent with the screen.
+- Because the state reflects all sources, the switch in Home Assistant will also follow
+  autonomous changes (a PIR-triggered wake shows up as the switch turning on).
+
+### Notes
+
+- **Multiple mirrors on one broker:** give each a unique `objectId`, otherwise they share
+  the same Home Assistant entity and topics.
+- **Removing the integration:** the discovery config is published *retained*, so it
+  survives after you set `enabled: false`. Home Assistant then shows the entity as
+  *unavailable* (via the availability topic). To remove it completely, delete the retained
+  message on `<discoveryPrefix>/switch/<objectId>/config` (e.g. with MQTT Explorer).
+- The Home Assistant topics must not equal your `mqttTopic`; the module refuses to start
+  the integration on such a collision, to avoid a state→presence feedback loop.
+
+---
+
 ## GPIO on Modern Systems (Raspberry Pi 5, Debian Trixie)
 
 MMM-PresenceScreenControl uses `gpiomon` from `gpiod` for PIR edge detection.
@@ -672,6 +764,21 @@ MIT License.
 ---
 
 ## Changelog
+
+### v1.6.0 (18.08.2026)
+
+**New features**
+
+- **Home Assistant integration** (`homeAssistant` config block): expose the mirror screen
+  as a native Home Assistant MQTT switch via MQTT Discovery — Home Assistant auto-creates
+  the entity, with no extra module and no shell scripts. Backend-only, reuses the existing
+  `mqtt*` settings, and works in every `mode` via a dedicated MQTT connection. Home
+  Assistant acts as an additional presence source (`ON` holds the screen on, `OFF` releases
+  it to the normal `counterTimeout`) and never overrides the module's cron windows or
+  timer. A retained state topic keeps the entity in sync with the real screen state at all
+  times, alongside availability (LWT) and auto-discovery. Disabled by default
+  (`enabled: false`); existing setups are unaffected.
+  Requested in [issue #10](https://github.com/rkorell/MMM-PresenceScreenControl/issues/10).
 
 ### v1.5.1 (18.07.2026)
 

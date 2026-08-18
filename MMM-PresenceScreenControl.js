@@ -10,6 +10,7 @@
  * Modified: 2026-05-05 - Add ecoMode (hide modules while screen is off, opt-in)
  * Modified: 2026-05-05 - Add notification API: emit MMM_PSC-USER_PRESENCE / MMM_PSC-SCREEN_POWERSTATUS, accept MMM_PSC-WAKEUP/LOCK/UNLOCK/END
  * Modified: 2026-06-06 - Add autoDimmerOpacity config option (closes issue #7)
+ * Modified: 2026-08-18 - Add optional homeAssistant config block (native HA MQTT-Discovery switch, handled in node_helper)
  */
 
 const ECO_LOCK = "MMM-PSC_ECO_LOCK";
@@ -47,7 +48,14 @@ Module.register("MMM-PresenceScreenControl", {
     resetCountdownWidth: false,           // If true, bar jumps to 100% at always-on countdown start
     treatExternalWakeupAsPresence: false, // If true, listen on a Unix socket and treat external screen-on signals as presence
     ecoMode: false,                       // If true, hide all other modules while the screen is off (DOM-level; reduces render load)
-    ecoModeIgnore: []                     // Module names to keep visible in ecoMode (e.g. ["MMM-FRITZ-Box-Callmonitor-py3"])
+    ecoModeIgnore: [],                    // Module names to keep visible in ecoMode (e.g. ["MMM-FRITZ-Box-Callmonitor-py3"])
+    homeAssistant: {                      // Optional Home Assistant MQTT-Discovery switch (backend-only; reuses the mqtt* settings above)
+      enabled: false,                     // Master switch for the whole HA integration
+      discovery: true,                    // Publish HA discovery config so the switch entity is auto-created
+      discoveryPrefix: "homeassistant",   // HA discovery prefix (match HA's mqtt discovery_prefix)
+      objectId: "magicmirror_screen",     // Technical id -> topic paths + HA unique_id; make unique per mirror if several share a broker
+      name: "MagicMirror Screen"          // Friendly name shown in Home Assistant
+    }
   },
 
   fadeTimers: [],

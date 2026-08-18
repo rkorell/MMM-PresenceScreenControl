@@ -13,6 +13,7 @@
  * Modified: 2026-06-06 - Implement startupGracePeriod as synthetic alwaysOnWindow (fixes #6)
  * Modified: 2026-06-06 - Stop overwriting this.counter while alwaysOn is active (fixes #6 phantom-green-bar)
  * Modified: 2026-06-06 - Seed startup grace before sensor start; suppress counter-loop restart when no countdown remains
+ * Modified: 2026-08-18 - Add native Home Assistant MQTT-Discovery switch (dedicated haClient, haPresence source, state/availability topics)
  */
 
 
@@ -25,6 +26,21 @@ const path = require("path");
 const PIR = require("./pirLib");
 
 const WAKEUP_SOCKET_NAME = "mmm-psc-wakeup.sock";
+
+// --- Home Assistant MQTT integration constants ---
+const HA_BASE_NS = "magicmirror";          // topic namespace for command/state/availability (distinct from sensor topic)
+const HA_CMD_SUFFIX = "/set";
+const HA_STATE_SUFFIX = "/state";
+const HA_AVAIL_SUFFIX = "/availability";
+const HA_DEFAULT_OBJECT_ID = "magicmirror_screen";
+const HA_DEFAULT_DISCOVERY_PREFIX = "homeassistant";
+const HA_PAYLOAD_ON = "ON";
+const HA_PAYLOAD_OFF = "OFF";
+const HA_AVAIL_ONLINE = "online";
+const HA_AVAIL_OFFLINE = "offline";
+const HA_RECONNECT_MS = 5000;
+const HA_QOS = 1;          // discovery, availability, command-subscribe, LWT
+const HA_STATE_QOS = 0;    // state publishes
 
 module.exports = NodeHelper.create({
   start: function () {
@@ -50,6 +66,9 @@ module.exports = NodeHelper.create({
     this.wakeupSocketPath = null;
     this.locked = false;
     this.startupGraceExpiry = null;
+    this.haClient = null;
+    this.haPresence = false;
+    this.haTopics = null;
   },
 
   stop: function () {
@@ -66,6 +85,7 @@ module.exports = NodeHelper.create({
       } catch (e) {}
       this.mqttClient = null;
     }
+    this.stopHomeAssistant();
     this.stopWakeupListener();
   },
 
@@ -123,6 +143,9 @@ module.exports = NodeHelper.create({
         this.startMqtt();
       }
       this.startCronMonitor();
+      if (this.config.homeAssistant && this.config.homeAssistant.enabled) {
+        this.startHomeAssistant();
+      }
       if (this.config.treatExternalWakeupAsPresence) {
         this.startWakeupListener();
       }
@@ -338,7 +361,7 @@ module.exports = NodeHelper.create({
       } else if (this.config.mode === "MQTT") {
         sensorPresence = this.mqttPresence;
       }
-      newPresence = sensorPresence || this.touchPresence;
+      newPresence = sensorPresence || this.touchPresence || this.haPresence;
     }
 
     if (newPresence) {
@@ -502,6 +525,7 @@ module.exports = NodeHelper.create({
   updateScreen: function (on) {
     if (on === this.screenOn) return;
     this.screenOn = on;
+    this.publishHaState();
     this.sendPresenceUpdate();
     let cmd = on ? this.config.onCommand : this.config.offCommand;
     this.log(`[updateScreen] on=${on}, cmd="${cmd}"`, "simple");
@@ -533,5 +557,131 @@ module.exports = NodeHelper.create({
       payload.alwaysOnLeft = Math.max(0, this.alwaysOnWindow.left);
     }
     this.sendSocketNotification("PRESENCE_UPDATE", payload);
+  },
+
+  // --- Home Assistant MQTT-Discovery switch ---
+
+  buildHaTopics: function () {
+    const ha = this.config.homeAssistant || {};
+    const objectId = ha.objectId || HA_DEFAULT_OBJECT_ID;
+    const prefix = ha.discoveryPrefix || HA_DEFAULT_DISCOVERY_PREFIX;
+    const base = HA_BASE_NS + "/" + objectId;
+    return {
+      objectId: objectId,
+      command: base + HA_CMD_SUFFIX,
+      state: base + HA_STATE_SUFFIX,
+      availability: base + HA_AVAIL_SUFFIX,
+      discovery: prefix + "/switch/" + objectId + "/config"
+    };
+  },
+
+  buildDiscoveryPayload: function () {
+    const ha = this.config.homeAssistant || {};
+    const t = this.haTopics;
+    const name = ha.name || "MagicMirror Screen";
+    return {
+      name: name,
+      unique_id: t.objectId,
+      command_topic: t.command,
+      state_topic: t.state,
+      availability_topic: t.availability,
+      payload_on: HA_PAYLOAD_ON,
+      payload_off: HA_PAYLOAD_OFF,
+      state_on: HA_PAYLOAD_ON,
+      state_off: HA_PAYLOAD_OFF,
+      payload_available: HA_AVAIL_ONLINE,
+      payload_not_available: HA_AVAIL_OFFLINE,
+      device: {
+        identifiers: ["mmm_psc_" + t.objectId],
+        name: name,
+        manufacturer: "MMM-PresenceScreenControl",
+        model: "Screen Switch"
+      }
+    };
+  },
+
+  startHomeAssistant: function () {
+    if (this.haClient) {
+      try { this.haClient.end(true); } catch (e) {}
+      this.haClient = null;
+    }
+    const t = this.buildHaTopics();
+    this.haTopics = t;
+
+    // R11: never share the presence sensor's topic — would create a state->presence feedback loop
+    if (t.command === this.config.mqttTopic || t.state === this.config.mqttTopic) {
+      console.error("PresenceControl: homeAssistant topics collide with mqttTopic — HA integration disabled");
+      this.log("[HA] topic collision with mqttTopic — aborting HA init", "simple");
+      this.haTopics = null;
+      return;
+    }
+
+    const options = {
+      reconnectPeriod: HA_RECONNECT_MS,
+      queueQoSZero: false,
+      will: { topic: t.availability, payload: HA_AVAIL_OFFLINE, retain: true, qos: HA_QOS }
+    };
+    if (this.config.mqttUser) { options.username = this.config.mqttUser; }
+    if (this.config.mqttPassword) { options.password = this.config.mqttPassword; }
+
+    this.haClient = mqtt.connect(this.config.mqttServer, options);
+
+    // connect handler runs on every (re)connect — republishing discovery/availability/state is self-healing
+    this.haClient.on("connect", () => {
+      this.log("[HA] connected", "simple");
+      if (this.config.homeAssistant.discovery) {
+        this.haClient.publish(t.discovery, JSON.stringify(this.buildDiscoveryPayload()), { retain: true, qos: HA_QOS });
+      }
+      this.haClient.publish(t.availability, HA_AVAIL_ONLINE, { retain: true, qos: HA_QOS });
+      this.publishHaState();
+      this.haClient.subscribe(t.command, { qos: HA_QOS }, (err) => {
+        if (err) this.log("[HA] subscribe error: " + err, "simple");
+        else this.log("[HA] subscribed to " + t.command, "simple");
+      });
+    });
+
+    this.haClient.on("message", (topic, message) => {
+      const cmd = message.toString().trim().toUpperCase();
+      if (cmd === HA_PAYLOAD_ON) {
+        this.haPresence = true;
+        this.updatePresence();
+      } else if (cmd === HA_PAYLOAD_OFF) {
+        this.haPresence = false;
+        this.updatePresence();
+      } else {
+        this.log("[HA] ignoring unknown command payload: " + cmd, "simple");
+        return;
+      }
+      // Confirmation publish: snap the switch back to reality if the command was rejected/overridden by cron windows
+      this.publishHaState();
+    });
+
+    this.haClient.on("error", (err) => { this.log("[HA] connection error: " + err, "simple"); });
+    this.haClient.on("close", () => { this.log("[HA] connection closed", "simple"); });
+    this.haClient.on("offline", () => { this.log("[HA] offline", "simple"); });
+    this.haClient.on("reconnect", () => { this.log("[HA] reconnecting", "simple"); });
+  },
+
+  publishHaState: function () {
+    if (!this.haClient || !this.haTopics || typeof this.screenOn !== "boolean") return;
+    const payload = this.screenOn ? HA_PAYLOAD_ON : HA_PAYLOAD_OFF;
+    this.haClient.publish(this.haTopics.state, payload, { retain: true, qos: HA_STATE_QOS });
+  },
+
+  stopHomeAssistant: function () {
+    if (!this.haClient) return;
+    const client = this.haClient;
+    const avail = this.haTopics ? this.haTopics.availability : null;
+    this.haClient = null;
+    try {
+      if (avail) {
+        // publish offline first, then end inside the callback so the message is flushed
+        client.publish(avail, HA_AVAIL_OFFLINE, { retain: true, qos: HA_QOS }, () => {
+          try { client.end(false, {}, () => {}); } catch (e) {}
+        });
+      } else {
+        client.end(true);
+      }
+    } catch (e) {}
   }
 });
