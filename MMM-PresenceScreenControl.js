@@ -11,6 +11,7 @@
  * Modified: 2026-05-05 - Add notification API: emit MMM_PSC-USER_PRESENCE / MMM_PSC-SCREEN_POWERSTATUS, accept MMM_PSC-WAKEUP/LOCK/UNLOCK/END
  * Modified: 2026-06-06 - Add autoDimmerOpacity config option (closes issue #7)
  * Modified: 2026-08-18 - Add optional homeAssistant config block (native HA MQTT-Discovery switch, handled in node_helper)
+ * Modified: 2026-08-20 - homeAssistant: add exposePresence option (PIR/presence as HA binary_sensor, handled in node_helper)
  */
 
 const ECO_LOCK = "MMM-PSC_ECO_LOCK";
@@ -54,7 +55,8 @@ Module.register("MMM-PresenceScreenControl", {
       discovery: true,                    // Publish HA discovery config so the switch entity is auto-created
       discoveryPrefix: "homeassistant",   // HA discovery prefix (match HA's mqtt discovery_prefix)
       objectId: "magicmirror_screen",     // Technical id -> topic paths + HA unique_id; make unique per mirror if several share a broker
-      name: "MagicMirror Screen"          // Friendly name shown in Home Assistant
+      name: "MagicMirror Screen",         // Friendly name shown in Home Assistant (device name)
+      exposePresence: "off"               // Also expose presence as HA binary_sensor: "off" | "occupancy" | "motion" | "both" (motion needs a PIR mode)
     }
   },
 

@@ -14,6 +14,7 @@
  * Modified: 2026-06-06 - Stop overwriting this.counter while alwaysOn is active (fixes #6 phantom-green-bar)
  * Modified: 2026-06-06 - Seed startup grace before sensor start; suppress counter-loop restart when no countdown remains
  * Modified: 2026-08-18 - Add native Home Assistant MQTT-Discovery switch (dedicated haClient, haPresence source, state/availability topics)
+ * Modified: 2026-08-20 - HA: expose PIR/presence as binary_sensor(s) (exposePresence occupancy/motion); switch is now the device main entity (fixes doubled entity_id)
  */
 
 
@@ -32,6 +33,8 @@ const HA_BASE_NS = "magicmirror";          // topic namespace for command/state/
 const HA_CMD_SUFFIX = "/set";
 const HA_STATE_SUFFIX = "/state";
 const HA_AVAIL_SUFFIX = "/availability";
+const HA_PRESENCE_SUFFIX = "/presence";   // occupancy binary_sensor state topic
+const HA_MOTION_SUFFIX = "/motion";       // motion binary_sensor state topic
 const HA_DEFAULT_OBJECT_ID = "magicmirror_screen";
 const HA_DEFAULT_DISCOVERY_PREFIX = "homeassistant";
 const HA_PAYLOAD_ON = "ON";
@@ -69,6 +72,9 @@ module.exports = NodeHelper.create({
     this.haClient = null;
     this.haPresence = false;
     this.haTopics = null;
+    this.haExpose = null;
+    this.haLastPresence = null;
+    this.haLastPir = null;
   },
 
   stop: function () {
@@ -557,9 +563,10 @@ module.exports = NodeHelper.create({
       payload.alwaysOnLeft = Math.max(0, this.alwaysOnWindow.left);
     }
     this.sendSocketNotification("PRESENCE_UPDATE", payload);
+    this.publishHaSensors();
   },
 
-  // --- Home Assistant MQTT-Discovery switch ---
+  // --- Home Assistant MQTT-Discovery (switch + optional presence binary_sensors) ---
 
   buildHaTopics: function () {
     const ha = this.config.homeAssistant || {};
@@ -571,16 +578,29 @@ module.exports = NodeHelper.create({
       command: base + HA_CMD_SUFFIX,
       state: base + HA_STATE_SUFFIX,
       availability: base + HA_AVAIL_SUFFIX,
-      discovery: prefix + "/switch/" + objectId + "/config"
+      presenceState: base + HA_PRESENCE_SUFFIX,
+      motionState: base + HA_MOTION_SUFFIX,
+      discovery: prefix + "/switch/" + objectId + "/config",
+      occupancyDiscovery: prefix + "/binary_sensor/" + objectId + "_occupancy/config",
+      motionDiscovery: prefix + "/binary_sensor/" + objectId + "_motion/config"
+    };
+  },
+
+  // Shared device block — identical identifiers group switch + sensors under one HA device
+  haDevice: function () {
+    const ha = this.config.homeAssistant || {};
+    return {
+      identifiers: ["mmm_psc_" + this.haTopics.objectId],
+      name: ha.name || "MagicMirror Screen",
+      manufacturer: "MMM-PresenceScreenControl",
+      model: "MagicMirror"
     };
   },
 
   buildDiscoveryPayload: function () {
-    const ha = this.config.homeAssistant || {};
     const t = this.haTopics;
-    const name = ha.name || "MagicMirror Screen";
     return {
-      name: name,
+      name: null,                 // main entity of the device -> entity_id is just <objectId>
       unique_id: t.objectId,
       command_topic: t.command,
       state_topic: t.state,
@@ -591,12 +611,24 @@ module.exports = NodeHelper.create({
       state_off: HA_PAYLOAD_OFF,
       payload_available: HA_AVAIL_ONLINE,
       payload_not_available: HA_AVAIL_OFFLINE,
-      device: {
-        identifiers: ["mmm_psc_" + t.objectId],
-        name: name,
-        manufacturer: "MMM-PresenceScreenControl",
-        model: "Screen Switch"
-      }
+      device: this.haDevice()
+    };
+  },
+
+  buildSensorDiscovery: function (kind) {
+    const t = this.haTopics;
+    const isMotion = (kind === "motion");
+    return {
+      name: isMotion ? "Motion" : "Presence",
+      unique_id: t.objectId + (isMotion ? "_motion" : "_occupancy"),
+      state_topic: isMotion ? t.motionState : t.presenceState,
+      device_class: isMotion ? "motion" : "occupancy",
+      payload_on: HA_PAYLOAD_ON,
+      payload_off: HA_PAYLOAD_OFF,
+      availability_topic: t.availability,
+      payload_available: HA_AVAIL_ONLINE,
+      payload_not_available: HA_AVAIL_OFFLINE,
+      device: this.haDevice()
     };
   },
 
@@ -616,6 +648,18 @@ module.exports = NodeHelper.create({
       return;
     }
 
+    // Which presence binary_sensors to expose: "off" | "occupancy" | "motion" | "both"
+    const ep = this.config.homeAssistant.exposePresence || "off";
+    const wantMotion = (ep === "motion" || ep === "both");
+    const pirActive = (this.config.mode === "PIR" || this.config.mode === "PIR_MQTT");
+    if (wantMotion && !pirActive) {
+      this.log("[HA] exposePresence requested 'motion' but no PIR mode is active — motion sensor skipped", "simple");
+    }
+    this.haExpose = {
+      occupancy: (ep === "occupancy" || ep === "both"),
+      motion: wantMotion && pirActive
+    };
+
     const options = {
       reconnectPeriod: HA_RECONNECT_MS,
       queueQoSZero: false,
@@ -631,9 +675,18 @@ module.exports = NodeHelper.create({
       this.log("[HA] connected", "simple");
       if (this.config.homeAssistant.discovery) {
         this.haClient.publish(t.discovery, JSON.stringify(this.buildDiscoveryPayload()), { retain: true, qos: HA_QOS });
+        if (this.haExpose.occupancy) {
+          this.haClient.publish(t.occupancyDiscovery, JSON.stringify(this.buildSensorDiscovery("occupancy")), { retain: true, qos: HA_QOS });
+        }
+        if (this.haExpose.motion) {
+          this.haClient.publish(t.motionDiscovery, JSON.stringify(this.buildSensorDiscovery("motion")), { retain: true, qos: HA_QOS });
+        }
       }
       this.haClient.publish(t.availability, HA_AVAIL_ONLINE, { retain: true, qos: HA_QOS });
       this.publishHaState();
+      this.haLastPresence = null;   // force sensor re-publish on (re)connect
+      this.haLastPir = null;
+      this.publishHaSensors();
       this.haClient.subscribe(t.command, { qos: HA_QOS }, (err) => {
         if (err) this.log("[HA] subscribe error: " + err, "simple");
         else this.log("[HA] subscribed to " + t.command, "simple");
@@ -666,6 +719,19 @@ module.exports = NodeHelper.create({
     if (!this.haClient || !this.haTopics || typeof this.screenOn !== "boolean") return;
     const payload = this.screenOn ? HA_PAYLOAD_ON : HA_PAYLOAD_OFF;
     this.haClient.publish(this.haTopics.state, payload, { retain: true, qos: HA_STATE_QOS });
+  },
+
+  // Publish the presence binary_sensors on transitions only (change-guarded)
+  publishHaSensors: function () {
+    if (!this.haClient || !this.haTopics || !this.haExpose) return;
+    if (this.haExpose.occupancy && this.presence !== this.haLastPresence) {
+      this.haLastPresence = this.presence;
+      this.haClient.publish(this.haTopics.presenceState, this.presence ? HA_PAYLOAD_ON : HA_PAYLOAD_OFF, { retain: true, qos: HA_STATE_QOS });
+    }
+    if (this.haExpose.motion && this.pirPresence !== this.haLastPir) {
+      this.haLastPir = this.pirPresence;
+      this.haClient.publish(this.haTopics.motionState, this.pirPresence ? HA_PAYLOAD_ON : HA_PAYLOAD_OFF, { retain: true, qos: HA_STATE_QOS });
+    }
   },
 
   stopHomeAssistant: function () {

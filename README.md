@@ -186,7 +186,8 @@ All configuration is done via module parameters.
       discovery: true,
       discoveryPrefix: "homeassistant",
       objectId: "magicmirror_screen",
-      name: "MagicMirror Screen"
+      name: "MagicMirror Screen",
+      exposePresence: "off"
     }
   }
 },
@@ -450,7 +451,8 @@ Here’s a breakdown of all the available options, with tips and friendly advice
   | `discovery` | `true` | Publish the HA discovery config so the switch entity is auto-created |
   | `discoveryPrefix` | `"homeassistant"` | Must match your Home Assistant `mqtt` discovery prefix |
   | `objectId` | `"magicmirror_screen"` | Technical id used for the topic paths and the entity `unique_id`. Make it unique per mirror if several share one broker. |
-  | `name` | `"MagicMirror Screen"` | Friendly name shown in Home Assistant |
+  | `name` | `"MagicMirror Screen"` | Device name shown in Home Assistant (the switch and any sensors are grouped under it) |
+  | `exposePresence` | `"off"` | Also expose presence to HA as a `binary_sensor`: `"off"`, `"occupancy"` (the module's combined presence), `"motion"` (the raw PIR — needs a PIR mode), or `"both"` |
 
   See the dedicated **Home Assistant integration** section below for topics and behaviour.
 
@@ -665,9 +667,15 @@ homeAssistant: {
   discovery: true,
   discoveryPrefix: "homeassistant",
   objectId: "magicmirror_screen",
-  name: "MagicMirror Screen"
+  name: "MagicMirror Screen",
+  exposePresence: "off"   // "off" | "occupancy" | "motion" | "both"
 }
 ```
+
+Everything is grouped under a single Home Assistant **device** (named after `name`). The
+switch is that device's main entity, so its entity id is simply `switch.<objectId>` (e.g.
+`switch.magicmirror_screen`). Any presence sensors you enable (see below) appear as
+additional entities on the same device.
 
 ### Topics
 
@@ -679,6 +687,8 @@ Derived from `objectId`, in a namespace kept separate from your presence sensor 
 | Command | `magicmirror/<objectId>/set` | HA → module (`ON` / `OFF`) |
 | State (retained) | `magicmirror/<objectId>/state` | module → HA (`ON` / `OFF`) |
 | Availability (retained, LWT) | `magicmirror/<objectId>/availability` | module → HA (`online` / `offline`) |
+| Presence sensor (retained, optional) | `magicmirror/<objectId>/presence` | module → HA (`ON` / `OFF`) |
+| Motion sensor (retained, optional) | `magicmirror/<objectId>/motion` | module → HA (`ON` / `OFF`) |
 
 ### Behaviour
 
@@ -699,14 +709,40 @@ module's own logic (cron windows, timer, dimming):
 - Because the state reflects all sources, the switch in Home Assistant will also follow
   autonomous changes (a PIR-triggered wake shows up as the switch turning on).
 
+### Presence as a binary_sensor (`exposePresence`)
+
+Since the module already reads the presence sensor, it can optionally publish that state to
+Home Assistant as a `binary_sensor` — so the mirror doubles as a room presence/motion sensor
+for your automations, no extra hardware needed. It is opt-in via `exposePresence`:
+
+- `"off"` (default) — only the screen switch is exposed.
+- `"occupancy"` — publishes the module's **combined** presence (the same signal as the
+  `MMM_PSC-USER_PRESENCE` notification) as a `binary_sensor` with `device_class: occupancy`.
+  Works in every `mode`. Note it is *held* — it stays `on` during the `counterTimeout`
+  wind-down, mirroring the module's presence state rather than raw motion.
+- `"motion"` — publishes the **raw PIR** signal as a `binary_sensor` with
+  `device_class: motion` — snappy, unfiltered edges, ideal for triggering lights. Requires a
+  PIR mode (`"PIR"` or `"PIR_MQTT"`); it is skipped with a log note in `"MQTT"`-only mode.
+- `"both"` — exposes both sensors.
+
+Each enabled sensor becomes an entity on the same device, e.g. `binary_sensor.<objectId>_presence`
+and `binary_sensor.<objectId>_motion`. Like the switch, their state is published retained and
+re-published on reconnect, and they share the switch's availability (LWT).
+
 ### Notes
 
 - **Multiple mirrors on one broker:** give each a unique `objectId`, otherwise they share
-  the same Home Assistant entity and topics.
-- **Removing the integration:** the discovery config is published *retained*, so it
-  survives after you set `enabled: false`. Home Assistant then shows the entity as
-  *unavailable* (via the availability topic). To remove it completely, delete the retained
-  message on `<discoveryPrefix>/switch/<objectId>/config` (e.g. with MQTT Explorer).
+  the same Home Assistant device and topics.
+- **Upgrading from v1.6.0:** the switch is now the device's *main* entity, so its entity id
+  is a clean `switch.<objectId>` instead of the doubled id v1.6.0 produced. Home Assistant
+  keeps the old entity id once created, so to pick up the new one, delete the entity in HA
+  and clear the retained `<discoveryPrefix>/switch/<objectId>/config`; it recreates cleanly.
+- **Removing the integration:** the discovery configs are published *retained*, so they
+  survive after you set `enabled: false`. Home Assistant then shows the entities as
+  *unavailable* (via the availability topic). To remove them completely, delete the retained
+  messages on `<discoveryPrefix>/switch/<objectId>/config` and, if you enabled sensors,
+  `<discoveryPrefix>/binary_sensor/<objectId>_occupancy/config` /
+  `<discoveryPrefix>/binary_sensor/<objectId>_motion/config` (e.g. with MQTT Explorer).
 - The Home Assistant topics must not equal your `mqttTopic`; the module refuses to start
   the integration on such a collision, to avoid a state→presence feedback loop.
 
@@ -764,6 +800,25 @@ MIT License.
 ---
 
 ## Changelog
+
+### v1.7.0 (20.08.2026)
+
+**New features**
+
+- **`exposePresence`**: optionally publish the mirror's presence to Home Assistant as a
+  `binary_sensor` via MQTT Discovery, so the mirror doubles as a room presence/motion sensor
+  for HA automations. `"occupancy"` exposes the module's combined presence
+  (`device_class: occupancy`, all modes), `"motion"` exposes the raw PIR
+  (`device_class: motion`, requires a PIR mode), `"both"` exposes both; default `"off"`.
+  The switch and sensors are grouped under one Home Assistant device, share availability
+  (LWT), and are published retained + re-published on reconnect. Suggested by papinist in
+  [issue #10](https://github.com/rkorell/MMM-PresenceScreenControl/issues/10).
+
+**Fixes**
+
+- HA switch is now the device's **main entity**, giving a clean `switch.<objectId>` entity id
+  instead of the doubled id v1.6.0 produced (`name` on both the device and the entity). See
+  the upgrade note in the Home Assistant integration section.
 
 ### v1.6.0 (18.08.2026)
 
