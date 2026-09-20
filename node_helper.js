@@ -15,6 +15,8 @@
  * Modified: 2026-06-06 - Seed startup grace before sensor start; suppress counter-loop restart when no countdown remains
  * Modified: 2026-08-18 - Add native Home Assistant MQTT-Discovery switch (dedicated haClient, haPresence source, state/availability topics)
  * Modified: 2026-08-20 - HA: expose PIR/presence as binary_sensor(s) (exposePresence occupancy/motion); switch is now the device main entity (fixes doubled entity_id)
+ * Modified: 2026-09-20 19:26 - Credit sensor presence seen during startupGracePeriod to the countdown (startup grace only, not cronAlwaysOnWindows) so short-hold sensors do not blank at grace end (fixes #11)
+ * Modified: 2026-09-20 19:37 - updatePresence: use getSensorPresence() instead of a second inline copy of the mode evaluation (no behaviour change)
  */
 
 
@@ -333,6 +335,20 @@ module.exports = NodeHelper.create({
     return false;
   },
 
+  // Sensor-presence according to the configured mode, plus the mode-independent
+  // sources (touch, Home Assistant). Mirrors the evaluation used by updatePresence().
+  getSensorPresence: function () {
+    let sensorPresence = false;
+    if (this.config.mode === "PIR_MQTT") {
+      sensorPresence = (this.pirPresence || this.mqttPresence);
+    } else if (this.config.mode === "PIR") {
+      sensorPresence = this.pirPresence;
+    } else if (this.config.mode === "MQTT") {
+      sensorPresence = this.mqttPresence;
+    }
+    return sensorPresence || this.touchPresence || this.haPresence;
+  },
+
   // PRÄMISSENTREU: State-Decision je nach Mode
   updatePresence: function () {
     this.log(`[updatePresence] pirPresence=${this.pirPresence}, mqttPresence=${this.mqttPresence}, touchPresence=${this.touchPresence}, alwaysOn=${this.alwaysOn}, ignoreActive=${this.ignoreActive}, presence=${this.presence}, locked=${this.locked}`, "complex");
@@ -348,6 +364,18 @@ module.exports = NodeHelper.create({
     if (this.alwaysOn) {
       this.presence = true;
       this.dimmed = false;
+      // Startup grace ONLY (never cronAlwaysOnWindows): credit sensor presence seen during the
+      // grace window to the countdown, so the screen does not blank the moment the grace ends.
+      // Short-hold sensors (e.g. Panasonic PaPIR, ~2s output hold) are LOW again a few seconds
+      // after motion, so evaluating the sensor level only at the grace boundary would discard
+      // presence that actually occurred inside the window (refs #11).
+      // Restricted to the startup grace because the counter is frozen while alwaysOn is active:
+      // in a long cronAlwaysOnWindow this would credit motion from many minutes ago.
+      // With no sensor presence the counter stays untouched, so an empty room still turns the
+      // screen off cleanly at grace end (preserves the #6 phantom-green-bar fix).
+      if (this.startupGraceExpiry && this.getSensorPresence()) {
+        this.counter = this.config.counterTimeout;
+      }
       this.updateScreen(true);
       this.startCounter();
       this.sendPresenceUpdate();
@@ -355,20 +383,7 @@ module.exports = NodeHelper.create({
     }
 
     // RKORELL: Sensor-Presence je nach Mode, plus touchPresence (unabhängig vom Mode)
-    let newPresence = false;
-    if (this.ignoreActive) {
-      newPresence = false;
-    } else {
-      let sensorPresence = false;
-      if (this.config.mode === "PIR_MQTT") {
-        sensorPresence = (this.pirPresence || this.mqttPresence);
-      } else if (this.config.mode === "PIR") {
-        sensorPresence = this.pirPresence;
-      } else if (this.config.mode === "MQTT") {
-        sensorPresence = this.mqttPresence;
-      }
-      newPresence = sensorPresence || this.touchPresence || this.haPresence;
-    }
+    let newPresence = this.ignoreActive ? false : this.getSensorPresence();
 
     if (newPresence) {
       this.presence = true;

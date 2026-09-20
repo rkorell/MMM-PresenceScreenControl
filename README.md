@@ -338,10 +338,12 @@ Here’s a breakdown of all the available options, with tips and friendly advice
       unless a sensor reports presence in the meantime
   Implemented as a synthetic always-on window: during the grace the screen is forced ON, no
   dimming occurs, and the presence bar shows the grace countdown in `colorCronActivation`
-  (same visual as `cronAlwaysOnWindows`). May exceed `counterTimeout`. **At the end of the
-  grace the screen turns off** (the grace replaces the regular `counterTimeout` for the startup
-  phase). If a PIR / MQTT sensor reports presence during the grace, normal `counterTimeout`
-  logic takes over at grace end as usual.
+  (same visual as `cronAlwaysOnWindows`). May exceed `counterTimeout`. **If no presence was
+  detected during the grace, the screen turns off at the end of the grace** (the grace replaces
+  the regular `counterTimeout` for the startup phase). If a PIR / MQTT sensor reports presence
+  at any time during the grace, the regular `counterTimeout` countdown starts at grace end.
+  This also covers short-hold sensors (e.g. Panasonic PaPIR, ~2 s output hold) whose output has
+  already dropped back to LOW by the time the grace ends.
 
 - **autoDimmer**
   Set to `true` to dim the screen after `autoDimmerTimeout` seconds
@@ -800,6 +802,34 @@ MIT License.
 ---
 
 ## Changelog
+
+### v1.7.1 (20.09.2026)
+
+**Fixes**
+
+- `startupGracePeriod` now remembers presence that was detected **during** the grace window.
+  Previously only the sensor level at the exact moment the grace expired decided whether the
+  screen stayed on, so motion seen a few seconds earlier was discarded. This never showed with
+  long-hold PIR sensors, whose output stays HIGH for minutes after motion and therefore still
+  reads HIGH at the grace boundary. Sensors with a short, fixed output hold — for example the
+  Panasonic PaPIR EKMB (~2 s, with no hold-time adjustment) — are already LOW again by then, so
+  the screen went black at the end of the grace even with somebody standing right in front of
+  it. Now, if any sensor reports presence at any time during the grace, the regular
+  `counterTimeout` countdown starts when the grace ends.
+  If no presence was detected during the grace, the counter stays untouched and the screen still
+  turns off cleanly at grace end — the phantom-countdown behaviour fixed in
+  [#6](https://github.com/rkorell/MMM-PresenceScreenControl/issues/6) is unchanged. Deliberately
+  limited to the startup grace: `cronAlwaysOnWindows` keep their previous behaviour, because the
+  counter is frozen while a window is active and a long window would otherwise credit motion
+  from many minutes earlier.
+  Reported by [@jhw2850](https://github.com/jhw2850) in
+  [issue #11](https://github.com/rkorell/MMM-PresenceScreenControl/issues/11) — thanks for
+  spotting this, and for pinpointing the exact code path.
+
+**Internal**
+
+- `updatePresence()` now shares the mode evaluation with the new `getSensorPresence()` helper
+  instead of carrying a second inline copy of it. No behaviour change.
 
 ### v1.7.0 (20.08.2026)
 
