@@ -331,8 +331,19 @@ Here’s a breakdown of all the available options, with tips and friendly advice
   How long (in seconds) the display stays ON after the last presence event (from either sensor).
 
 - **startupGracePeriod**
-  How long (in seconds) the screen stays on after module startup. The grace period is the visible
-  startup window — nothing more, nothing less.
+  How long (in seconds) the screen stays on after module startup, regardless of sensor state.
+
+  **What it is for:** checking that the mirror actually came back after a restart — typically
+  after a config change, from a remote session, with **nobody standing in front of the mirror**.
+  The grace stands in for presence *while there is none*: it holds the screen on precisely
+  because no sensor is holding it on.
+
+  **When you do not need it:** if somebody is in front of the mirror while it starts, the sensor
+  reports presence by itself and the regular `counterTimeout` takes over — the grace contributes
+  nothing and only masks the sensor for its duration. For that situation leave it at `0`.
+  A small value (1–2 s) can still help with short-hold sensors, to bridge the gap between two
+  motion pulses while the module is coming up.
+
     - `0` (default) – screen turns off after ~1 second if nobody is detected
     - `30` – screen stays on and fully visible for 30 seconds after startup, then turns off
       unless a sensor reports presence in the meantime
@@ -825,6 +836,13 @@ MIT License.
   Reported by [@jhw2850](https://github.com/jhw2850) in
   [issue #11](https://github.com/rkorell/MMM-PresenceScreenControl/issues/11) — thanks for
   spotting this, and for pinpointing the exact code path.
+
+**Documentation**
+
+- `startupGracePeriod` now states what it is actually for: confirming that the mirror came back
+  after a restart when **nobody** is in front of it (typically a remote config change). If
+  somebody *is* present at startup, the sensor covers it on its own and the grace is not needed
+  — `0` is the right setting for that case.
 
 **Internal**
 
