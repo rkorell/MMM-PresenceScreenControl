@@ -12,9 +12,13 @@
  * Modified: 2026-06-06 - Add autoDimmerOpacity config option (closes issue #7)
  * Modified: 2026-08-18 - Add optional homeAssistant config block (native HA MQTT-Discovery switch, handled in node_helper)
  * Modified: 2026-08-20 - homeAssistant: add exposePresence option (PIR/presence as HA binary_sensor, handled in node_helper)
+ * Modified: 2026-11-16 12:25 - debug is a log threshold ("off" | "error" | "warn" | "info" | "debug"; simple/complex translated); redact credentials in logged config; pass the sender of WAKEUP/END/LOCK/UNLOCK to the node_helper (refs #12)
  */
 
 const ECO_LOCK = "MMM-PSC_ECO_LOCK";
+// Same threshold as node_helper.js: a level shows itself and every more severe level
+const PSC_LOG_LEVELS = { off: 0, error: 1, warn: 2, info: 3, debug: 4 };
+const PSC_LEGACY_DEBUG_LEVELS = { simple: "info", complex: "debug" };
 
 Module.register("MMM-PresenceScreenControl", {
   /**
@@ -44,8 +48,8 @@ Module.register("MMM-PresenceScreenControl", {
     colorTo: "lime",                      // Bar color at timer start (full)
     colorCronActivation: "cornflowerblue",// Bar color during always-on window
     showPresenceStatus: true,             // Show "Presence: YES/NO" above the bar
-    debug: "off",                          // Debug level: "off", "simple", "complex"
-    logFileName: "",                      // Log destination: "" = console.log (pm2 logs), "file.log" = file in module dir
+    debug: "off",                          // Log threshold: "off", "error", "warn", "info", "debug" (each includes the more severe ones)
+    logFileName: "",                      // Log destination: "" = console (pm2 logs), "file.log" = file in module dir
     resetCountdownWidth: false,           // If true, bar jumps to 100% at always-on countdown start
     treatExternalWakeupAsPresence: false, // If true, listen on a Unix socket and treat external screen-on signals as presence
     ecoMode: false,                       // If true, hide all other modules while the screen is off (DOM-level; reduces render load)
@@ -85,19 +89,31 @@ Module.register("MMM-PresenceScreenControl", {
     this.hasAlwaysOnJumped = false;
     this.lastScreenOn = null;
     this.lastPresenceState = null;
+    var level = PSC_LEGACY_DEBUG_LEVELS[this.config.debug] || this.config.debug;
+    this.logLevel = PSC_LOG_LEVELS[level] || 0;
     this.sendSocketNotification("CONFIG", this.config);
-    this.log("Module started with config: " + JSON.stringify(this.config), "simple");
+    this.log("Module started with config: " + this.redactedConfig(), "info");
     this.updateDom();
   },
 
   /**
-   * Debug logging function, controlled by the debug config option.
+   * Logging, controlled by the debug threshold ("off" logs nothing).
    */
-  log: function (msg, level="simple") {
-    if (this.config.debug === "off") return;
-    if (this.config.debug === level || this.config.debug === "complex") {
-      console.log("PresenceControl: " + msg);
+  log: function (msg, level) {
+    if (!this.logLevel || PSC_LOG_LEVELS[level] > this.logLevel) return;
+    console[level]("PresenceControl: " + msg);
+  },
+
+  /**
+   * Config as JSON with the MQTT password (and a password in the broker URL) masked.
+   */
+  redactedConfig: function () {
+    var copy = Object.assign({}, this.config);
+    if (copy.mqttPassword) copy.mqttPassword = "***";
+    if (typeof copy.mqttServer === "string") {
+      copy.mqttServer = copy.mqttServer.replace(/\/\/([^:@/]+):([^@/]+)@/, "//$1:***@");
     }
+    return JSON.stringify(copy);
   },
 
   /**
@@ -169,10 +185,10 @@ Module.register("MMM-PresenceScreenControl", {
         }
       }
       this.updateDom();
-      this.log("Received PRESENCE_UPDATE: " + JSON.stringify(payload), "complex");
+      this.log("Received PRESENCE_UPDATE: " + JSON.stringify(payload), "debug");
     }
     if (notification === "DEBUG_LOG") {
-      this.log(payload, "complex");
+      this.log(payload, "debug");
     }
   },
 
@@ -323,7 +339,7 @@ Module.register("MMM-PresenceScreenControl", {
       if (self.config.ecoModeIgnore.indexOf(m.name) !== -1) return;
       m.hide(0, function () {}, { lockString: ECO_LOCK });
     });
-    this.log("ecoMode: hide all modules", "simple");
+    this.log("ecoMode: hide all modules", "info");
   },
 
   /**
@@ -338,11 +354,11 @@ Module.register("MMM-PresenceScreenControl", {
       m.show(0, function () {}, {
         lockString: ECO_LOCK,
         onError: function (err) {
-          self.log("ecoMode: show blocked for " + m.name + " — " + err, "complex");
+          self.log("ecoMode: show blocked for " + m.name + " — " + err, "debug");
         }
       });
     });
-    this.log("ecoMode: show all modules", "simple");
+    this.log("ecoMode: show all modules", "info");
   },
 
   /**
@@ -356,13 +372,13 @@ Module.register("MMM-PresenceScreenControl", {
         self.sendSocketNotification("TOUCH_EVENT", { type: "click" });
       }, false);
     } else if (notification === "MMM_PSC-WAKEUP") {
-      this.sendSocketNotification("EXT_WAKEUP");
+      this.sendSocketNotification("EXT_WAKEUP", { sender: sender ? sender.name : "system" });
     } else if (notification === "MMM_PSC-END") {
-      this.sendSocketNotification("EXT_END");
+      this.sendSocketNotification("EXT_END", { sender: sender ? sender.name : "system" });
     } else if (notification === "MMM_PSC-LOCK") {
-      this.sendSocketNotification("EXT_LOCK");
+      this.sendSocketNotification("EXT_LOCK", { sender: sender ? sender.name : "system" });
     } else if (notification === "MMM_PSC-UNLOCK") {
-      this.sendSocketNotification("EXT_UNLOCK");
+      this.sendSocketNotification("EXT_UNLOCK", { sender: sender ? sender.name : "system" });
     }
   }
 });

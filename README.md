@@ -396,15 +396,48 @@ Here’s a breakdown of all the available options, with tips and friendly advice
   Set to `true` to show a “Presence: YES/NO” indicator above the bar.
 
 - **debug**
-  Set the debug logging level:
-    - `"off"` – no debug output
-    - `"simple"` – standard info
-    - `"complex"` – lots of details (useful for troubleshooting)
+  Log threshold of this module. Each level shows its own messages **and all more severe ones**:
+
+  | Value | Shows | Use it for |
+  |---|---|---|
+  | `"off"` (default) | nothing at all | normal operation |
+  | `"error"` | errors | unattended mirrors: only lines that mean something is broken |
+  | `"warn"` | errors, warnings | additionally degraded or suspicious states |
+  | `"info"` | errors, warnings, info | what the module does: screen on/off with reason, startup line, hourly status |
+  | `"debug"` | everything | internals: every sensor edge, every MQTT message, every presence evaluation |
+
+  What each level means:
+    - **error** – a core function failed: presence is no longer detected or the screen can no
+      longer be switched (e.g. gpiomon ended, the PIR pin goes HIGH without motion events,
+      the screen command failed, MQTT presence lost).
+    - **warn** – degraded or suspicious, but still working (e.g. sensor process restarted,
+      a cron window was ignored as invalid, under-voltage, a chattering sensor).
+    - **info** – normal operation.
+    - **debug** – internals.
+
+  The setting is independent of MagicMirror's global `logLevel`: you can switch MagicMirror's own
+  output off and still get this module's lines. Lines go to the console (`pm2 logs`) with
+  MagicMirror's timestamp and the module name, prefixed with an area tag:
+  `[PIR] [GPIOMON] [WATCH] [MQTT] [HA] [SCREEN] [PRESENCE] [CRON] [INPUT] [CONFIG] [STATUS]`.
+  Repeating faults are reported when they start and when they end; repeatable single errors
+  (e.g. malformed MQTT payloads) at most once per hour, with the number of suppressed repeats.
+  The MQTT password is always masked.
+
+  The old values still work: `"simple"` is treated as `"info"`, `"complex"` as `"debug"` (with a
+  warning). Unknown values are treated as `"off"`.
+
+  **Diagnosis on a Raspberry Pi:** from `"error"` upwards the module cross-checks the PIR pin
+  once per second with `pinctrl get` (read-only) against the events it receives. It reports an
+  error if the pin goes HIGH three times within 5 minutes without a motion event, if the pin is LOW
+  while presence is still reported, or if the pin's function/bias changes. It also reports
+  under-voltage/throttling (`vcgencmd get_throttled`). Without `pinctrl` these checks are skipped
+  (one warning). The check samples once per second, so HIGH pulses shorter than about one second
+  can be missed by it.
 
 - **logFileName**
-  Controls where debug output goes (requires `debug` to be set to `"simple"` or `"complex"`):
-    - `""` (empty string, default) – writes to `console.log`, visible in `pm2 logs`
-    - `"myfile.log"` – writes to that file in the module directory, for focused debugging
+  Controls where the log lines go (only when `debug` is not `"off"`):
+    - `""` (empty string, default) – console, visible in `pm2 logs`
+    - `"myfile.log"` – writes to that file in the module directory instead, with timestamp and level
 
 - **resetCountdownWidth**
   If `true`, the always-on bar jumps to 100% width at the start of the final countdown.
@@ -774,9 +807,17 @@ The module auto-selects the GPIO chip:
 - Raspberry Pi 5: `gpiochip4`
 - Other systems: `gpiochip0` (or first available `/dev/gpiochip*`)
 
+The PIR line is monitored with the internal pull-down enabled (libgpiod 2.x and 1.5+). With
+libgpiod older than 1.5 no bias can be set; the module warns, and a sensor with a high-impedance
+output should then be used with the Python/gpiozero fallback, which sets the pull-down.
+
+If the sensor process (`gpiomon` or the Python fallback) ends unexpectedly, the module restarts it
+(after 1 s, 5 s, 30 s, then every 60 s) and reads the pin level again, so presence is correct after
+the restart. Each end is logged as an error.
+
 ### Automatic fallback to Python/gpiozero
 
-If `gpiomon` is not installed or no GPIO chip is available, the module falls back to Python/gpiozero (`MotionSensor.py`).
+If `gpiomon` is not installed, no GPIO chip is available or `gpiomon` exits with an error code, the module falls back to Python/gpiozero (`MotionSensor.py`).
 
 **Fallback requirements:**
 - Python 3 with gpiozero (`python3-gpiozero`)
@@ -798,6 +839,15 @@ If `gpiomon` is not installed or no GPIO chip is available, the module falls bac
 
 - **GPIO errors on Debian Trixie:** Ensure `gpiomon` is installed (`gpiod` package). If unavailable, check fallback dependencies `python3-gpiozero` and `python3-lgpio`.
 
+- **The mirror sometimes does not wake up:** set `debug: "error"` (or `"info"` for context) and
+  check `pm2 logs` after the next occurrence. The startup line names the platform (PSC, MagicMirror,
+  Node, kernel, Pi model, libgpiod); `[GPIOMON]`, `[PIR]` and `[WATCH]` errors show whether the
+  sensor process ended, whether the pin moved without events, or whether the screen command failed.
+
+- **Screen command fails or hangs:** the command is retried (5 s, 30 s, then every 60 s) until it
+  succeeds; a command still running after 30 s is terminated. The reported screen state only
+  changes after the command succeeded.
+
 ---
 
 ## Credits & License
@@ -813,6 +863,56 @@ MIT License.
 ---
 
 ## Changelog
+
+### v1.8.0 (16.11.2026)
+
+**Update:** `git pull` (no new dependencies).
+
+**Breaking: logging**
+
+- `debug` is now a threshold: `"off"`, `"error"`, `"warn"`, `"info"`, `"debug"` — each level
+  includes all more severe ones (see `debug` above). `"off"` is now really silent: previously
+  several sensor messages were printed regardless of the setting. `"simple"` and `"complex"` keep
+  working as `"info"` and `"debug"` and print a deprecation warning.
+- Every existing log line was re-assigned by severity (core function failed = error, degraded =
+  warn, normal operation = info, internals = debug) and carries an area tag.
+
+**New diagnostics**
+
+Motivated by [issue #12](https://github.com/rkorell/MMM-PresenceScreenControl/issues/12) — thanks to
+[@jhw2850](https://github.com/jhw2850): sporadic failures on unusual hardware could not be
+analysed from the logs. New log points include:
+
+- end of `gpiomon`/Python with code, signal and runtime; stdout of `gpiomon` closing
+- PIR pin cross-check via `pinctrl` (Raspberry Pi): pin HIGH without motion events, pin LOW while
+  presence is still reported, pin function/bias changed, sensor process gone
+- `gpiomon` lines that are neither rising nor falling; two edges in the same direction (lost edge)
+- MQTT: connection lost/back, field missing in the JSON payload (previously silently "no presence")
+- screen command: exit code, duration, stderr; slow (> 2 s) and hanging commands
+- screen on although nothing will turn it off; auto-dimmer on/off; every screen on/off with its reason
+- configuration: invalid `mode`, empty `onCommand`/`offCommand`, invalid cron windows,
+  overlapping alwaysOn/ignore windows, repeated CONFIG (browser reload)
+- under-voltage/throttling, chattering sensor, PIR presence for more than 30 min, system clock
+  jumps, stalled event loop
+- startup line with versions and platform; hourly status line
+
+**Fixes**
+
+- Sensor process ending with code 0 or by a signal was not restarted — motion detection stopped
+  silently until MagicMirror was restarted. It is now restarted with backoff.
+- Python fallback: output on stderr marked the sensor as stopped although it kept running, and a
+  later stop left the Python process behind. stderr is now only logged; stopping always ends the process.
+- Screen command: the screen state was taken as switched before the command ran, so a failed
+  command was never repeated. The state now changes on success only, failed commands are retried,
+  commands run one at a time and are terminated after 30 s.
+- libgpiod 1.x: `gpiomon` output was block-buffered when read through a pipe, so events could
+  arrive late; it is now line-buffered (`-b` from 1.3, `stdbuf` below). The pull-down bias is now
+  also set on 1.x (from 1.5, `-B pull-down`).
+- A failed initial `gpioget` was reported as LOW; it is now reported as unknown with the reason.
+- A malformed cron window (missing `from`/`to`, `days` not an array) raised an exception every
+  second and stopped the window evaluation. Invalid windows are now ignored with a warning.
+- A repeated CONFIG (browser reload) left the previous wakeup socket server open.
+- The MQTT password (also inside `mqttServer`) is masked in logged configuration.
 
 ### v1.7.1 (20.09.2026)
 
@@ -952,7 +1052,7 @@ MIT License.
 - Removed the `postinstall` electron rebuild flow entirely.
 - PIR mode now works without native Node.js rebuilds.
 - Kept automatic fallback to Python/gpiozero when `gpiomon` is unavailable.
-- Fixed log spam: routed all runtime `console.log` calls through the debug system (`simple`/`complex` levels).
+- Fixed log spam: routed the node_helper's runtime `console.log` calls through the debug system (`simple`/`complex` levels). The PIR library kept printing regardless of the setting until v1.8.0.
 - Renamed log prefix from `[MMM-Pir]` to `[PresenceScreenControl]`.
 - Fixed startup behavior: screen now turns off after ~1 second if no presence is detected at startup.
   Previously, the screen stayed on indefinitely until the first sensor event.
